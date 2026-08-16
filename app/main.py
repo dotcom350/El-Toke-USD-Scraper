@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -100,6 +101,22 @@ app.mount("/mcp", mcp_asgi_app)
 templates = Jinja2Templates(directory="app/templates")
 
 
+def _static_asset_version(path: str) -> str:
+    """Content hash for cache-busting static assets. Cloudflare (and
+    browsers) cache /static/* aggressively; since the URL never otherwise
+    changes between deploys, a stale cached copy can outlive a redeploy by
+    hours. Appending ?v=<hash> makes each content change a new URL instead.
+    """
+    try:
+        with open(path, "rb") as f:
+            return hashlib.md5(f.read()).hexdigest()[:10]
+    except OSError:
+        return "0"
+
+
+STATIC_VERSION = _static_asset_version("app/static/style.css")
+
+
 def _v1_dolar_shape(usd_entry: dict) -> dict:
     """Keeps /api/v1/dolar's original response shape stable for existing
     consumers even though scraping is now driven by the shared multi-currency
@@ -123,7 +140,12 @@ def _v1_dolar_shape(usd_entry: dict) -> dict:
 
 @app.get("/", response_class=HTMLResponse)
 async def landing(request: Request):
-    return templates.TemplateResponse(request, "index.html")
+    return templates.TemplateResponse(
+        request,
+        "index.html",
+        {"static_version": STATIC_VERSION},
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 @app.get("/api/v1/dolar")
