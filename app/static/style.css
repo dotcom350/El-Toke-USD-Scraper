@@ -259,6 +259,16 @@ h1 {
   margin-bottom: 0.6rem;
 }
 
+.flag {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-right: 0.45rem;
+  object-fit: cover;
+  background: var(--bg-soft);
+}
+
 .price-card .price {
   font-size: 3rem;
   font-weight: 800;

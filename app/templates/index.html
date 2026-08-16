@@ -45,8 +45,8 @@
 
   <div class="hero-grid">
     <div class="card price-card">
-      <div class="label" data-i18n="en">Informal rate &middot; 1 USD</div>
-      <div class="label" data-i18n="es">Tasa informal &middot; 1 USD</div>
+      <div class="label" data-i18n="en"><img class="flag" src="https://flagsapi.com/US/flat/32.png" alt="" width="16" height="16" loading="lazy" />Informal rate &middot; 1 USD</div>
+      <div class="label" data-i18n="es"><img class="flag" src="https://flagsapi.com/US/flat/32.png" alt="" width="16" height="16" loading="lazy" />Tasa informal &middot; 1 USD</div>
       <div class="price"><span class="value" id="price-cup">0</span><span class="unit">CUP</span></div>
       <div class="sub">
         <span><span class="value" id="price-mlc">0</span> MLC</span>
@@ -233,7 +233,7 @@ docker compose up -d --build</code></pre>
       <span class="dot-sep">&middot;</span>
       <span data-i18n="en">Running thanks to</span>
       <span data-i18n="es" class="lang-active">Funciona gracias a</span>
-      <a href="https://impactodigital.vip" target="_blank" rel="noopener">impactodigital.vip</a>
+      <a href="https://impactodigital.vip" target="_blank" rel="noopener">ID Academy</a>
       <span>&amp;</span>
       <a href="https://dokploy.com" target="_blank" rel="noopener">Dokploy</a>
     </div>
@@ -335,6 +335,25 @@ docker compose up -d --build</code></pre>
     es: { "th-code": "Código", "th-currency": "Moneda", "th-informal": "Informal (1 = CUP)", "th-formal": "Formal (CADECA)" },
   };
 
+  // flagsapi.com doesn't have a EUR/EU flag (only real ISO country codes),
+  // so EUR gets a small hand-drawn EU flag instead.
+  const FLAG_COUNTRY = {
+    USD: "US", EUR: "EU", MLC: "CU", CAD: "CA", MXN: "MX",
+    ZELLE: "US", CLA: "CU", GBP: "GB", CHF: "CH",
+  };
+  const EU_FLAG_SVG = '<svg class="flag" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">'
+    + '<rect width="24" height="24" rx="4" fill="#039"/>'
+    + [[12,5.8],[15.1,6.63],[17.37,8.9],[18.2,12],[17.37,15.1],[15.1,17.37],[12,18.2],[8.9,17.37],[6.63,15.1],[5.8,12],[6.63,8.9],[8.9,6.63]]
+        .map(([x, y]) => `<circle cx="${x}" cy="${y}" r="0.9" fill="#fc0"/>`).join("")
+    + "</svg>";
+
+  function flagHtml(code) {
+    const iso = FLAG_COUNTRY[code];
+    if (!iso) return "";
+    if (iso === "EU") return EU_FLAG_SVG;
+    return `<img class="flag" src="https://flagsapi.com/${iso}/flat/32.png" alt="" width="16" height="16" loading="lazy" />`;
+  }
+
   function renderRatesTable() {
     const labels = RATES_HEADERS[currentLang] || RATES_HEADERS.en;
     Object.entries(labels).forEach(([id, text]) => {
@@ -355,7 +374,7 @@ docker compose up -d --build</code></pre>
         const formal = r.formal && r.formal["CADECA Casas de cambio"]
           ? `${r.formal["CADECA Casas de cambio"].compra} / ${r.formal["CADECA Casas de cambio"].venta}`
           : "—";
-        return `<tr><td><code>${r.code}</code></td><td>${name}</td><td>${informal}</td><td>${formal}</td></tr>`;
+        return `<tr><td><code>${r.code}</code></td><td>${flagHtml(r.code)}${name}</td><td>${informal}</td><td>${formal}</td></tr>`;
       })
       .join("");
   }
