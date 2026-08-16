@@ -164,29 +164,9 @@ curl {{ request.base_url }}api/v2/rates/EUR</code></pre>
   <section>
     <h2 data-i18n="en">Example response</h2>
     <h2 data-i18n="es">Respuesta de ejemplo</h2>
-    <p class="section-sub" data-i18n="en"><code>requested_at</code> is computed the instant your request hits the server &mdash; it is not the scrape time.</p>
-    <p class="section-sub" data-i18n="es"><code>requested_at</code> se calcula en el instante en que tu solicitud llega al servidor &mdash; no es la hora del scrape.</p>
-    <pre class="code"><code>{
-  <span class="s1">"success"</span>: <span class="kw">true</span>,
-  <span class="s1">"requested_at"</span>: <span class="s1">"2026-08-15T14:32:07.123Z"</span>,
-  <span class="s1">"interval_minutes"</span>: 480,
-  <span class="s1">"generated_at"</span>: <span class="s1">"2026-08-15T14:00:11.905Z"</span>,
-  <span class="s1">"rates"</span>: [
-    {
-      <span class="s1">"code"</span>: <span class="s1">"USD"</span>,
-      <span class="s1">"informal"</span>: {
-        <span class="s1">"cup"</span>: 665.0,
-        <span class="s1">"conversions"</span>: { <span class="s1">"MLC"</span>: 1.41, <span class="s1">"EUR"</span>: 0.86 },
-        <span class="s1">"change_vs_yesterday_cup"</span>: 0.0
-      },
-      <span class="s1">"formal"</span>: {
-        <span class="s1">"BPA"</span>: { <span class="s1">"compra"</span>: 602.70, <span class="s1">"venta"</span>: 627.30 }
-      }
-    },
-    { <span class="s1">"code"</span>: <span class="s1">"EUR"</span>, <span class="c1">"..."</span> },
-    { <span class="s1">"code"</span>: <span class="s1">"MLC"</span>, <span class="c1">"..."</span> }
-  ]
-}</code></pre>
+    <p class="section-sub" data-i18n="en">This is the real, live response from <code>GET /api/v2/rates</code> right now &mdash; not a mock. <code>requested_at</code> is computed the instant your request hits the server &mdash; it is not the scrape time.</p>
+    <p class="section-sub" data-i18n="es">Esta es la respuesta real y en vivo de <code>GET /api/v2/rates</code> ahora mismo &mdash; no es un mock. <code>requested_at</code> se calcula en el instante en que tu solicitud llega al servidor &mdash; no es la hora del scrape.</p>
+    <pre class="code" style="max-height: 480px; overflow-y: auto;"><code id="example-response">&hellip;</code></pre>
   </section>
 
   <section>
@@ -292,15 +272,19 @@ docker compose up -d --build</code></pre>
   }
 
   async function loadAllRates() {
+    const exampleEl = document.getElementById("example-response");
     try {
       const res = await fetch("/api/v2/rates");
       if (!res.ok) throw new Error("not ready");
       const payload = await res.json();
       latestRates = payload.rates || [];
       renderRatesTable();
+      // The full, real response this endpoint just returned - not a mock.
+      if (exampleEl) exampleEl.textContent = JSON.stringify(payload, null, 2);
     } catch (err) {
       const body = document.getElementById("rates-body");
       if (body) body.innerHTML = '<tr><td colspan="4">—</td></tr>';
+      if (exampleEl) exampleEl.textContent = "—";
     }
   }
 
