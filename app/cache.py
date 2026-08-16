@@ -39,4 +39,4 @@ class RateCache:
 
     def last_scrape_at(self) -> Optional[str]:
         with self._lock:
-            return self._data.get("scraped_at") if self._data else None
+            return self._data.get("generated_at") if self._data else None

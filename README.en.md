@@ -2,30 +2,32 @@
 
 [🇪🇸 Español](README.md) · [🇬🇧 English](#)
 
-Free JSON API for Cuba's informal (street) and official bank USD exchange rates, scraped hourly from [elTOQUE](https://eltoque.com/tasas-de-cambio-cuba/dolar) via [Firecrawl](https://www.firecrawl.dev) (needed because the site sits behind a Cloudflare challenge that a plain `curl`/`requests` can't pass).
+Free JSON API for the informal (street) and official bank rates of **all 9 currencies elTOQUE publishes** (USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF), scraped from [elTOQUE](https://eltoque.com/tasas-de-cambio-cuba) via [Firecrawl](https://www.firecrawl.dev) (needed because the site sits behind a Cloudflare challenge that a plain `curl`/`requests` can't pass).
 
-Live demo landing page: `http://localhost:8000/` (or wherever you deploy it) — bilingual, shows the current rate, and includes copy-pasteable code snippets.
+Live demo landing page: `http://localhost:8000/` (or wherever you deploy it) — bilingual, shows the current rate plus a table of all 9 currencies, and includes copy-pasteable code snippets.
 
 ---
 
 ## How it works
 
-- A background scheduler scrapes elTOQUE through Firecrawl every `SCRAPE_INTERVAL_MINUTES` (default **60**) and caches the parsed result to `data/cache.json`.
+- A background scheduler scrapes elTOQUE's 9 currency pages through Firecrawl, **sequentially**, every `SCRAPE_INTERVAL_MINUTES` (480 = 8h by default), and caches the parsed result to `data/cache.json`. It's sequential rather than parallel because Firecrawl returns 429 (rate limited) if you fire several scrapes at once; each call retries automatically with backoff when that happens.
 - API requests **never** trigger a live scrape — they just read the cache, so responses are instant and don't burn Firecrawl credits.
-- Every response includes `requested_at`, computed at the exact moment the request hits the server — **not** the time the data was scraped (that's `data.scraped_at`).
+- Every response includes `requested_at`, computed at the exact moment the request hits the server — **not** the time the data was scraped (that's `data.scraped_at` / `generated_at`).
+- Not every currency has both markets: MLC, ZELLE (Zelle balance) and CLA (classic card balance) only trade informally (no bank counter for them); GBP and CHF only have an official bank rate (elTOQUE doesn't track a street rate for those).
 
 ### Firecrawl credits math
 
-Firecrawl's free tier gives **1000 credits/month**, and a plain `/v2/scrape` call costs **1 credit**.
+Firecrawl's free tier gives **1000 credits/month**, and a plain `/v2/scrape` call costs **1 credit**. Each refresh cycle scrapes all **9 currencies**, so the cost is 9x a single-currency API.
 
 | Interval | Scrapes/day | Credits/month | Fits in 1000? |
 | --- | --- | --- | --- |
-| 15 min | 96 | ~2,880 | No |
-| 30 min | 48 | ~1,440 | No |
-| **60 min (default)** | **24** | **~720-744** | **Yes, ~260 credits of buffer** |
-| 120 min | 12 | ~360 | Yes, plenty of buffer |
+| 60 min | 9 × 24 = 216 | ~6,480 | No |
+| 240 min (4h) | 9 × 6 = 54 | ~1,620 | No |
+| 360 min (6h) | 9 × 4 = 36 | ~1,080 | Just barely over |
+| **480 min / 8h (default)** | **9 × 3 = 27** | **~810** | **Yes, ~190 credits of buffer** |
+| 720 min (12h) | 9 × 2 = 18 | ~540 | Yes, plenty of buffer |
 
-The default (hourly) leaves headroom for manual testing, restarts, and the immediate scrape that runs on every app startup.
+The default (every 8h) leaves headroom for manual testing, restarts, and the immediate scrape that runs on every app startup.
 
 ---
 
@@ -42,7 +44,7 @@ docker compose up -d --build
 Then open `http://localhost:8000/` for the landing page, or call the API directly:
 
 ```bash
-curl http://localhost:8000/api/v1/dolar
+curl http://localhost:8000/api/v2/rates
 ```
 
 ---
@@ -51,39 +53,47 @@ curl http://localhost:8000/api/v1/dolar
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/api/v1/dolar` | Informal + official USD rates, as cached JSON |
+| `GET` | `/api/v2/rates` | All 9 currencies, in elTOQUE's own order |
+| `GET` | `/api/v2/rates/{code}` | A single currency by code (`USD`, `EUR`, `MLC`, `CAD`, `MXN`, `ZELLE`, `CLA`, `GBP`, `CHF`) |
+| `GET` | `/api/v1/dolar` | USD only, in the original response shape (kept for backward compatibility) |
 | `GET` | `/api/v1/health` | Service status and last successful scrape time |
 | `GET` | `/docs` | Interactive Swagger / OpenAPI docs |
 | `GET` | `/` | Bilingual landing page |
 
-### Example response
+### Example response — `/api/v2/rates/EUR`
 
 ```json
 {
   "success": true,
   "requested_at": "2026-08-15T14:32:07.123456+00:00",
-  "interval_minutes": 60,
+  "interval_minutes": 480,
   "data": {
+    "code": "EUR",
+    "name_es": "Euro",
+    "name_en": "Euro",
     "scraped_at": "2026-08-15T14:00:11.905000+00:00",
-    "source_url": "https://eltoque.com/tasas-de-cambio-cuba/dolar",
+    "source_url": "https://eltoque.com/tasas-de-cambio-cuba/euro",
     "source_updated_label": "15 de agosto de 2026 a las 08:03 a. m.",
     "informal": {
-      "usd_to_cup": 665.0,
-      "usd_to_mlc": 1.41,
-      "usd_to_eur": 0.86,
+      "cup": 770.0,
+      "conversions": { "USD": 1.16, "MLC": 1.63 },
       "change_vs_yesterday_cup": 0.0
     },
     "formal": {
-      "BPA": { "compra": 602.70, "venta": 627.30 },
-      "BANDEC": { "compra": 580.16, "venta": 603.84 },
-      "BANMET Efectivo": { "compra": 602.70, "venta": 627.30 },
-      "BANMET Transferencia": { "compra": 615.00, "venta": 624.23 },
-      "CADECA Casas de cambio": { "compra": 585.00, "venta": 608.40 },
-      "CADECA Hoteles y Aeropuertos": { "compra": 596.55, "venta": 651.90 }
+      "BPA": { "compra": 694.37, "venta": 722.71 },
+      "BANDEC": { "compra": 663.35, "venta": 690.43 },
+      "BANMET Efectivo": { "compra": 692.44, "venta": 720.70 },
+      "BANMET Transferencia": { "compra": 706.57, "venta": 717.17 },
+      "CADECA Casas de cambio": { "compra": 669.53, "venta": 696.31 },
+      "CADECA Hoteles y Aeropuertos": { "compra": 687.29, "venta": 751.05 }
     }
   }
 }
 ```
+
+`informal` is `null` for currencies with no informal market (GBP, CHF); `formal` is `null` for currencies with no bank counter (MLC, ZELLE, CLA).
+
+`/api/v1/dolar` keeps the original response shape (`informal.usd_to_cup`, `usd_to_mlc`, `usd_to_eur`) so existing consumers don't break — it reads from the same shared cache internally rather than triggering a separate scrape.
 
 ---
 
@@ -94,7 +104,7 @@ Environment variables (see `.env.example`):
 | Variable | Default | Description |
 | --- | --- | --- |
 | `FIRECRAWL_API_KEY` | — (required) | Your Firecrawl API key. Get one free at firecrawl.dev. |
-| `SCRAPE_INTERVAL_MINUTES` | `60` | Minutes between scrapes. See credits math above. |
+| `SCRAPE_INTERVAL_MINUTES` | `480` | Minutes between scrapes (of all 9 currencies). See credits math above. |
 | `PORT` | `8000` | Host port exposed by docker compose. |
 
 ---
@@ -103,9 +113,10 @@ Environment variables (see `.env.example`):
 
 ```
 app/
-  main.py          # FastAPI app, endpoints, scheduler wiring
-  scraper.py        # Firecrawl call + markdown -> structured JSON parsing
-  cache.py          # thread-safe JSON cache (memory + disk)
+  main.py          # FastAPI app, v1/v2 endpoints, scheduler wiring
+  currencies.py      # registry of the 9 currencies, in elTOQUE's order
+  scraper.py          # Firecrawl call + markdown -> structured JSON parsing
+  cache.py            # thread-safe JSON cache (memory + disk)
   templates/
     index.html       # bilingual landing page
   static/
@@ -132,7 +143,7 @@ uvicorn app.main:app --reload
 
 ## Disclaimer
 
-This project is **not affiliated with elTOQUE**. All exchange rate data belongs to and is published by [eltoque.com](https://eltoque.com/tasas-de-cambio-cuba/dolar); this API simply re-serves it in a machine-readable format for convenience. Provided for informational purposes only — verify important decisions against the original source.
+This project is **not affiliated with elTOQUE**. All exchange rate data belongs to and is published by [eltoque.com](https://eltoque.com/tasas-de-cambio-cuba); this API simply re-serves it in a machine-readable format for convenience. Provided for informational purposes only — verify important decisions against the original source.
 
 ## License
 
