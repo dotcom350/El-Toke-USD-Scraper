@@ -1,51 +1,45 @@
 # Cuba USD Rate API
 
-Free JSON API for Cuba's informal (street) and official bank USD exchange rates, scraped hourly from [elTOQUE](https://eltoque.com/tasas-de-cambio-cuba/dolar) via [Firecrawl](https://www.firecrawl.dev) (needed because the site sits behind a Cloudflare challenge that a plain `curl`/`requests` can't pass).
+[🇪🇸 Español](#) · [🇬🇧 English](README.en.md)
 
-API gratuita en JSON para la tasa informal (calle) y las tasas oficiales de bancos del dólar en Cuba, scrapeada cada hora desde [elTOQUE](https://eltoque.com/tasas-de-cambio-cuba/dolar) usando [Firecrawl](https://www.firecrawl.dev) (necesario porque el sitio está detrás de un challenge de Cloudflare que un `curl`/`requests` normal no puede pasar).
+API JSON gratuita para la tasa informal (calle) y las tasas oficiales de bancos del dólar en Cuba, scrapeada cada hora desde [elTOQUE](https://eltoque.com/tasas-de-cambio-cuba/dolar) usando [Firecrawl](https://www.firecrawl.dev) (necesario porque el sitio está detrás de un challenge de Cloudflare que un `curl`/`requests` normal no puede pasar).
 
-Live demo landing page: `http://localhost:8000/` (or wherever you deploy it) — bilingual, shows the current rate, and includes copy-pasteable code snippets.
+Landing page en vivo: `http://localhost:8000/` (o donde la despliegues) — bilingüe, muestra la tasa actual, e incluye ejemplos de código listos para copiar.
 
 ---
 
-## How it works / Cómo funciona
-
-- A background scheduler scrapes elTOQUE through Firecrawl every `SCRAPE_INTERVAL_MINUTES` (default **60**) and caches the parsed result to `data/cache.json`.
-- API requests **never** trigger a live scrape — they just read the cache, so responses are instant and don't burn Firecrawl credits.
-- Every response includes `requested_at`, computed at the exact moment the request hits the server — **not** the time the data was scraped (that's `data.scraped_at`).
+## Cómo funciona
 
 - Un scheduler en segundo plano scrapea elTOQUE vía Firecrawl cada `SCRAPE_INTERVAL_MINUTES` (60 por defecto) y cachea el resultado parseado en `data/cache.json`.
 - Las solicitudes a la API **nunca** disparan un scrape en vivo — solo leen el caché, así que las respuestas son instantáneas y no gastan créditos de Firecrawl.
 - Cada respuesta incluye `requested_at`, calculado en el instante exacto en que la solicitud llega al servidor — **no** la hora en que se scrapeó la data (eso es `data.scraped_at`).
 
-### Firecrawl credits math / Matemática de créditos
+### Matemática de créditos de Firecrawl
 
-Firecrawl's free tier gives **1000 credits/month**, and a plain `/v2/scrape` call costs **1 credit**.
+El tier gratuito de Firecrawl da **1000 créditos/mes**, y una llamada normal a `/v2/scrape` cuesta **1 crédito**.
 
-| Interval | Scrapes/day | Credits/month | Fits in 1000? |
+| Intervalo | Scrapes/día | Créditos/mes | ¿Entra en 1000? |
 | --- | --- | --- | --- |
 | 15 min | 96 | ~2,880 | No |
 | 30 min | 48 | ~1,440 | No |
-| **60 min (default)** | **24** | **~720-744** | **Yes, ~260 credits of buffer** |
-| 120 min | 12 | ~360 | Yes, plenty of buffer |
+| **60 min (por defecto)** | **24** | **~720-744** | **Sí, ~260 créditos de margen** |
+| 120 min | 12 | ~360 | Sí, mucho margen |
 
-The default (hourly) leaves headroom for manual testing, restarts, and the immediate scrape that runs on every app startup.
-
-El tier gratuito de Firecrawl da **1000 créditos/mes**, y una llamada normal a `/v2/scrape` cuesta **1 crédito**. El valor por defecto (cada hora) deja margen para pruebas manuales, reinicios, y el scrape inmediato que corre cada vez que arranca la app.
+El valor por defecto (cada hora) deja margen para pruebas manuales, reinicios, y el scrape inmediato que corre cada vez que arranca la app.
 
 ---
 
-## Quickstart (Docker Compose)
+## Inicio rápido (Docker Compose)
 
 ```bash
-git clone https://github.com/your-user/cuba-usd-rate-api.git
+git clone https://github.com/tu-usuario/cuba-usd-rate-api.git
 cd cuba-usd-rate-api
 cp .env.example .env
-# edit .env and set FIRECRAWL_API_KEY=fc-...
+# edita .env y pon FIRECRAWL_API_KEY=fc-...
 docker compose up -d --build
 ```
 
-Then open `http://localhost:8000/` for the landing page, or call the API directly:
+Luego abre `http://localhost:8000/` para la landing page, o llama a la API directamente:
 
 ```bash
 curl http://localhost:8000/api/v1/dolar
@@ -55,14 +49,14 @@ curl http://localhost:8000/api/v1/dolar
 
 ## Endpoints
 
-| Method | Path | Description |
+| Método | Ruta | Descripción |
 | --- | --- | --- |
-| `GET` | `/api/v1/dolar` | Informal + official USD rates, as cached JSON |
-| `GET` | `/api/v1/health` | Service status and last successful scrape time |
-| `GET` | `/docs` | Interactive Swagger / OpenAPI docs |
-| `GET` | `/` | Bilingual landing page |
+| `GET` | `/api/v1/dolar` | Tasas de USD informal + oficiales, como JSON cacheado |
+| `GET` | `/api/v1/health` | Estado del servicio y hora del último scrape exitoso |
+| `GET` | `/docs` | Documentación interactiva Swagger / OpenAPI |
+| `GET` | `/` | Landing page bilingüe |
 
-### Example response
+### Respuesta de ejemplo
 
 ```json
 {
@@ -93,55 +87,53 @@ curl http://localhost:8000/api/v1/dolar
 
 ---
 
-## Configuration / Configuración
+## Configuración
 
-Environment variables (see `.env.example`):
+Variables de entorno (ver `.env.example`):
 
-| Variable | Default | Description |
+| Variable | Por defecto | Descripción |
 | --- | --- | --- |
-| `FIRECRAWL_API_KEY` | — (required) | Your Firecrawl API key. Get one free at firecrawl.dev. |
-| `SCRAPE_INTERVAL_MINUTES` | `60` | Minutes between scrapes. See credits math above. |
-| `PORT` | `8000` | Host port exposed by docker compose. |
+| `FIRECRAWL_API_KEY` | — (requerida) | Tu API key de Firecrawl. Consigue una gratis en firecrawl.dev. |
+| `SCRAPE_INTERVAL_MINUTES` | `60` | Minutos entre scrapes. Ver la matemática de créditos arriba. |
+| `PORT` | `8000` | Puerto del host expuesto por docker compose. |
 
 ---
 
-## Project structure
+## Estructura del proyecto
 
 ```
 app/
-  main.py          # FastAPI app, endpoints, scheduler wiring
-  scraper.py        # Firecrawl call + markdown -> structured JSON parsing
-  cache.py          # thread-safe JSON cache (memory + disk)
+  main.py          # app FastAPI, endpoints, scheduler
+  scraper.py        # llamada a Firecrawl + parseo de markdown a JSON estructurado
+  cache.py          # caché JSON thread-safe (memoria + disco)
   templates/
-    index.html       # bilingual landing page
+    index.html       # landing page bilingüe
   static/
     style.css
 data/
-  cache.json         # created at runtime, gitignored
+  cache.json         # se crea en tiempo de ejecución, ignorado por git
 Dockerfile
 docker-compose.yml
 requirements.txt
 .env.example
 ```
 
-## Running without Docker
+## Correr sin Docker
 
 ```bash
 python -m venv .venv
 .venv/Scripts/activate   # Windows
 pip install -r requirements.txt
-cp .env.example .env     # then edit it
+cp .env.example .env     # y edítalo
 uvicorn app.main:app --reload
 ```
 
 ---
 
-## Disclaimer
-
-This project is **not affiliated with elTOQUE**. All exchange rate data belongs to and is published by [eltoque.com](https://eltoque.com/tasas-de-cambio-cuba/dolar); this API simply re-serves it in a machine-readable format for convenience. Provided for informational purposes only — verify important decisions against the original source.
+## Aviso legal
 
 Este proyecto **no está afiliado a elTOQUE**. Toda la data de tasas de cambio pertenece a y es publicada por [eltoque.com](https://eltoque.com/tasas-de-cambio-cuba/dolar); esta API simplemente la re-sirve en formato JSON por conveniencia. Provisto solo con fines informativos — verifica decisiones importantes contra la fuente original.
 
-## License
+## Licencia
 
-MIT — see [LICENSE](LICENSE).
+MIT — ver [LICENSE](LICENSE).
