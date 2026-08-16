@@ -1,0 +1,76 @@
+{% extends "admin_base.html" %}
+{% block title %}Configuración{% endblock %}
+{% block content %}
+<h1>Configuración de qvai</h1>
+<p class="admin-sub">
+  Estado:
+  {% if bot_running %}
+  <span class="admin-status-pill on"><span class="dot"></span> Corriendo</span>
+  {% else %}
+  <span class="admin-status-pill off"><span class="dot"></span> Apagado</span>
+  {% endif %}
+</p>
+
+<form method="post" action="/admin/settings" class="admin-form">
+  <div class="admin-card">
+    <h2>Identidad y comportamiento</h2>
+
+    <div class="field">
+      <label for="bot_name">Nombre del bot</label>
+      <input type="text" id="bot_name" name="bot_name" value="{{ settings.bot_name }}" required />
+    </div>
+
+    <div class="field">
+      <label for="system_prompt">Personalidad / instrucciones (system prompt)</label>
+      <textarea id="system_prompt" name="system_prompt" required>{{ settings.system_prompt }}</textarea>
+      <div class="hint">Usa <code>{RATES}</code> en el texto donde quieras que se inserten las tasas de cambio en tiempo real.</div>
+    </div>
+
+    <div class="checkbox-field field">
+      <input type="checkbox" id="enabled" name="enabled" {{ "checked" if settings.enabled else "" }} />
+      <label for="enabled" style="margin: 0;">Bot activo</label>
+    </div>
+  </div>
+
+  <div class="admin-card">
+    <h2>Credenciales</h2>
+
+    <div class="field">
+      <label for="telegram_token">Token de Telegram (@BotFather)</label>
+      <input type="password" id="telegram_token" name="telegram_token" placeholder="{{ '••••••••••••••••••• (configurado)' if settings.telegram_token else 'Pega aquí el token, ej: 123456:ABC-DEF...' }}" autocomplete="off" />
+      <div class="hint">Se deja en blanco a propósito por seguridad. Escribe algo aquí solo si quieres reemplazarlo.</div>
+    </div>
+
+    <div class="field">
+      <label for="nvidia_api_key">API key de NVIDIA (build.nvidia.com)</label>
+      <input type="password" id="nvidia_api_key" name="nvidia_api_key" placeholder="{{ '••••••••••••••••••• (configurada)' if settings.nvidia_api_key else 'nvapi-...' }}" autocomplete="off" />
+      <div class="hint">Igual que el token, se deja en blanco a propósito. Escribe algo aquí solo si quieres reemplazarla.</div>
+    </div>
+  </div>
+
+  <div class="admin-card">
+    <h2>Modelo</h2>
+
+    <div class="field">
+      <label for="model">Modelo de NVIDIA NIM</label>
+      <input type="text" id="model" name="model" value="{{ settings.model }}" required />
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="temperature">Temperature</label>
+        <input type="number" id="temperature" name="temperature" value="{{ settings.temperature|round(2) }}" step="0.1" min="0" max="2" required />
+      </div>
+      <div class="field">
+        <label for="max_tokens">Max tokens</label>
+        <input type="number" id="max_tokens" name="max_tokens" value="{{ settings.max_tokens }}" step="1" min="64" max="16384" required />
+      </div>
+    </div>
+  </div>
+
+  <button type="submit" class="admin-btn">Guardar y reiniciar el bot</button>
+  {% if saved %}
+  <span class="admin-saved-msg">✓ Guardado</span>
+  {% endif %}
+</form>
+{% endblock %}

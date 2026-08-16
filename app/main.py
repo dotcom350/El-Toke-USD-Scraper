@@ -1,6 +1,6 @@
-import hashlib
 import logging
 import os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -9,7 +9,12 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
 
+from app import db
+from app.admin import build_admin_router
+from app.assets import content_hash
+from app.bot import BotManager
 from app.cache import RateCache
 from app.currencies import CURRENCIES, CURRENCIES_BY_CODE
 from app.mcp_server import build_mcp_asgi_app
@@ -21,6 +26,10 @@ logger = logging.getLogger("cuba-usd-rate-api")
 FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY")
 INTERVAL_MINUTES = int(os.getenv("SCRAPE_INTERVAL_MINUTES", "480"))
 CACHE_PATH = os.getenv("CACHE_PATH", "data/cache.json")
+
+SESSION_SECRET = os.getenv("SESSION_SECRET") or secrets.token_hex(32)
+if not os.getenv("SESSION_SECRET"):
+    logger.warning("SESSION_SECRET is not set - using a random one, admin logins won't survive a restart.")
 
 cache = RateCache(path=CACHE_PATH)
 scheduler = AsyncIOScheduler()
@@ -42,6 +51,8 @@ def _get_all_currencies() -> list | None:
 
 
 mcp_asgi_app = build_mcp_asgi_app(fetch_all=_get_all_currencies, fetch_one=_get_currency_entry)
+bot_manager = BotManager(get_rates=_get_all_currencies)
+admin_router = build_admin_router(bot_manager)
 
 
 async def refresh_job() -> None:
@@ -80,6 +91,13 @@ async def lifespan(app: FastAPI):
         await refresh_job()
         scheduler.add_job(refresh_job, "interval", minutes=INTERVAL_MINUTES, id="refresh")
         scheduler.start()
+
+    await db.init_pool()
+    if db.pool_ready():
+        settings = await db.get_settings()
+        if settings.get("enabled") and settings.get("telegram_token"):
+            await bot_manager.start(settings["telegram_token"])
+
     # The MCP sub-app manages its own background task group via its own
     # lifespan; mounting it doesn't wire that up automatically, so it has to
     # be entered here alongside our own startup/shutdown.
@@ -87,6 +105,8 @@ async def lifespan(app: FastAPI):
         yield
     if scheduler.running:
         scheduler.shutdown(wait=False)
+    await bot_manager.stop()
+    await db.close_pool()
 
 
 app = FastAPI(
@@ -96,25 +116,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, session_cookie="qvai_admin", max_age=60 * 60 * 24 * 7)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.mount("/mcp", mcp_asgi_app)
+app.include_router(admin_router)
 templates = Jinja2Templates(directory="app/templates")
 
-
-def _static_asset_version(path: str) -> str:
-    """Content hash for cache-busting static assets. Cloudflare (and
-    browsers) cache /static/* aggressively; since the URL never otherwise
-    changes between deploys, a stale cached copy can outlive a redeploy by
-    hours. Appending ?v=<hash> makes each content change a new URL instead.
-    """
-    try:
-        with open(path, "rb") as f:
-            return hashlib.md5(f.read()).hexdigest()[:10]
-    except OSError:
-        return "0"
-
-
-STATIC_VERSION = _static_asset_version("app/static/style.css")
+STATIC_VERSION = content_hash("app/static/style.css")
 
 
 def _v1_dolar_shape(usd_entry: dict) -> dict:

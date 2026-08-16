@@ -1,0 +1,68 @@
+{% extends "admin_base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<p class="admin-sub">Estado del bot qvai y actividad reciente.</p>
+
+<div class="admin-stats-grid">
+  <div class="admin-stat-card">
+    <div class="stat-label">Estado del bot</div>
+    {% if bot_running %}
+    <span class="admin-status-pill on"><span class="dot"></span> Corriendo</span>
+    {% else %}
+    <span class="admin-status-pill off"><span class="dot"></span> Apagado</span>
+    {% endif %}
+  </div>
+  <div class="admin-stat-card">
+    <div class="stat-label">Mensajes totales</div>
+    <div class="stat-value">{{ stats.total_messages }}</div>
+  </div>
+  <div class="admin-stat-card">
+    <div class="stat-label">Chats únicos</div>
+    <div class="stat-value">{{ stats.total_chats }}</div>
+  </div>
+  <div class="admin-stat-card">
+    <div class="stat-label">Modelo</div>
+    <div class="stat-value" style="font-size: 0.95rem; font-family: var(--mono);">{{ settings.model }}</div>
+  </div>
+</div>
+
+{% if not settings.telegram_token or not settings.nvidia_api_key %}
+<div class="admin-card" style="border-color: rgba(234,179,8,0.4);">
+  <h2>⚠️ Falta configuración</h2>
+  <p style="color: var(--text-dim); margin: 0;">
+    {% if not settings.telegram_token %}Falta el token de Telegram.{% endif %}
+    {% if not settings.nvidia_api_key %} Falta la API key de NVIDIA.{% endif %}
+    Ve a <a href="/admin/settings" class="text-link">Configuración</a> para agregarlos.
+  </p>
+</div>
+{% endif %}
+
+<div class="admin-card">
+  <h2>Conversaciones recientes</h2>
+  {% if recent_chats %}
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Usuario</th>
+        <th>Último mensaje</th>
+        <th>Mensajes</th>
+        <th>Última actividad</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for chat in recent_chats %}
+      <tr>
+        <td><a href="/admin/conversations/{{ chat.chat_id }}">{{ chat.first_name or chat.username or chat.chat_id }}</a>{% if chat.username %} <span style="color: var(--text-dim);">@{{ chat.username }}</span>{% endif %}</td>
+        <td style="max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ chat.last_message }}</td>
+        <td>{{ chat.message_count }}</td>
+        <td style="color: var(--text-dim); white-space: nowrap;">{{ chat.last_message_at.strftime("%d/%m %H:%M") }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="admin-empty">Todavía no hay conversaciones.</div>
+  {% endif %}
+</div>
+{% endblock %}

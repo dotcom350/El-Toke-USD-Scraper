@@ -129,6 +129,29 @@ Esta es una respuesta real, capturada en vivo de la API corriendo:
 
 ---
 
+## qvai — bot de Telegram con IA + panel admin
+
+El proyecto incluye **qvai**, un bot de Telegram conversacional que responde preguntas sobre las tasas de cambio (usa el mismo caché en vivo que la API) y charla de cualquier otro tema, usando la API de [NVIDIA NIM](https://build.nvidia.com) (compatible con el SDK de OpenAI). Cada mensaje se guarda en Postgres, y todo se administra desde un panel web en `/admin` — sin tocar código ni redeploy.
+
+**Desde el panel admin puedes:**
+- Ver **todas las conversaciones** que ha tenido el bot (lista de chats + hilo completo de cada uno).
+- Editar el **comportamiento del bot** (nombre, personalidad/system prompt, modelo, temperature, max tokens) en caliente.
+- Editar el **token de Telegram** y la **API key de NVIDIA** — el bot se reinicia solo al guardar.
+- Prender/apagar el bot.
+
+### Cómo activarlo
+
+1. Crea un bot en Telegram hablando con [@BotFather](https://t.me/BotFather) → `/newbot` → copia el token que te da.
+2. Consigue una API key gratis en [build.nvidia.com](https://build.nvidia.com) (el modelo por defecto es `nvidia/nemotron-3.5-lightning-30b-a3b`, pero puedes cambiarlo en el panel).
+3. Levanta el proyecto con `docker compose up -d --build` (ya incluye Postgres, ver Inicio rápido arriba).
+4. Entra a `http://localhost:8000/admin` (o tu dominio) con la contraseña de `ADMIN_PASSWORD`, ve a **Configuración**, pega el token de Telegram y la API key de NVIDIA, y guarda. El bot arranca solo.
+
+El system prompt por defecto ya trae instrucciones para responder en español, usar las tasas en tiempo real (placeholder `{RATES}`), y mencionar de vez en cuando que el bot es un proyecto de **ID Academy** (impactodigital.vip) — todo esto es editable desde el panel.
+
+> El bot usa *long polling* (no webhook), así que cambiar el token desde el panel simplemente reinicia el polling — no hay que re-registrar nada con Telegram.
+
+---
+
 ## Configuración
 
 Variables de entorno (ver `.env.example`):
@@ -138,6 +161,11 @@ Variables de entorno (ver `.env.example`):
 | `FIRECRAWL_API_KEY` | — (requerida) | Tu API key de Firecrawl. Consigue una gratis en firecrawl.dev. |
 | `SCRAPE_INTERVAL_MINUTES` | `480` | Minutos entre scrapes (de las 9 monedas). Ver la matemática de créditos arriba. |
 | `PORT` | `8000` | Puerto del host expuesto por docker compose. |
+| `ADMIN_PASSWORD` | — (requerida) | Contraseña para entrar a `/admin`. |
+| `SESSION_SECRET` | — (requerida) | Secreto para firmar la cookie de sesión del panel. Generar con `python -c "import secrets; print(secrets.token_hex(32))"`. |
+| `POSTGRES_PASSWORD` | — (requerida) | Contraseña del contenedor de Postgres (no se publica al host, solo accesible desde `api` dentro de la red de docker compose). |
+
+El **token de Telegram** y la **API key de NVIDIA** de qvai *no* van en `.env` — se cargan desde el panel `/admin` en caliente (ver sección de arriba), así se pueden cambiar sin redeploy.
 
 ---
 
@@ -145,19 +173,25 @@ Variables de entorno (ver `.env.example`):
 
 ```
 app/
-  main.py          # app FastAPI, endpoints v1/v2, scheduler
+  main.py          # app FastAPI, endpoints v1/v2, scheduler, wiring
   currencies.py      # registro de las 9 monedas, en el orden de elTOQUE
   scraper.py         # llamada a Firecrawl + parseo de markdown a JSON estructurado
   cache.py           # caché JSON thread-safe (memoria + disco)
   mcp_server.py       # servidor MCP (mismas tools que la API, mismo caché)
+  db.py               # acceso a Postgres: settings de qvai + log de conversaciones
+  bot.py               # bot de Telegram qvai (long polling + NVIDIA NIM)
+  admin.py             # panel admin (login, dashboard, conversaciones, settings)
+  assets.py            # cache-busting de estáticos (hash de contenido)
   templates/
     index.html       # landing page bilingüe
+    admin_*.html      # plantillas del panel admin
   static/
     style.css
+    admin.css          # estilos del panel admin
 data/
   cache.json         # se crea en tiempo de ejecución, ignorado por git
 Dockerfile
-docker-compose.yml
+docker-compose.yml       # incluye el servicio de Postgres
 requirements.txt
 .env.example
 ```

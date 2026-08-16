@@ -129,6 +129,29 @@ This is a real response, captured live from the running API:
 
 ---
 
+## qvai — AI Telegram bot + admin panel
+
+The project ships with **qvai**, a conversational Telegram bot that answers questions about the exchange rates (using the same live cache as the API) and chats about anything else, powered by [NVIDIA NIM](https://build.nvidia.com) (OpenAI SDK-compatible). Every message is logged to Postgres, and everything is managed from a web panel at `/admin` — no code changes or redeploys needed.
+
+**From the admin panel you can:**
+- View **every conversation** the bot has had (chat list + full thread per chat).
+- Edit the **bot's behavior** (name, personality/system prompt, model, temperature, max tokens) live.
+- Edit the **Telegram token** and **NVIDIA API key** — the bot restarts itself on save.
+- Turn the bot on/off.
+
+### Turning it on
+
+1. Create a bot on Telegram via [@BotFather](https://t.me/BotFather) → `/newbot` → copy the token it gives you.
+2. Get a free API key at [build.nvidia.com](https://build.nvidia.com) (the default model is `nvidia/nemotron-3.5-lightning-30b-a3b`, changeable in the panel).
+3. Bring the stack up with `docker compose up -d --build` (already includes Postgres, see Quickstart above).
+4. Go to `http://localhost:8000/admin` (or your domain), log in with `ADMIN_PASSWORD`, open **Settings**, paste the Telegram token and NVIDIA API key, and save. The bot starts itself.
+
+The default system prompt already tells it to reply in Spanish, use the live rates (via a `{RATES}` placeholder), and occasionally mention it's an **ID Academy** (impactodigital.vip) project — all of this is editable from the panel.
+
+> The bot uses long polling (no webhook), so changing the token from the panel just restarts the polling loop — nothing to re-register with Telegram.
+
+---
+
 ## Configuration
 
 Environment variables (see `.env.example`):
@@ -138,6 +161,11 @@ Environment variables (see `.env.example`):
 | `FIRECRAWL_API_KEY` | — (required) | Your Firecrawl API key. Get one free at firecrawl.dev. |
 | `SCRAPE_INTERVAL_MINUTES` | `480` | Minutes between scrapes (of all 9 currencies). See credits math above. |
 | `PORT` | `8000` | Host port exposed by docker compose. |
+| `ADMIN_PASSWORD` | — (required) | Password to log into `/admin`. |
+| `SESSION_SECRET` | — (required) | Secret used to sign the admin panel's session cookie. Generate with `python -c "import secrets; print(secrets.token_hex(32))"`. |
+| `POSTGRES_PASSWORD` | — (required) | Password for the bundled Postgres container (not published to the host — only reachable from `api` on the compose network). |
+
+qvai's **Telegram token** and **NVIDIA API key** do *not* go in `.env` — they're loaded live from the `/admin` panel (see the section above), so they can be changed without a redeploy.
 
 ---
 
@@ -145,19 +173,25 @@ Environment variables (see `.env.example`):
 
 ```
 app/
-  main.py          # FastAPI app, v1/v2 endpoints, scheduler wiring
+  main.py          # FastAPI app, v1/v2 endpoints, scheduler, wiring
   currencies.py      # registry of the 9 currencies, in elTOQUE's order
   scraper.py          # Firecrawl call + markdown -> structured JSON parsing
   cache.py            # thread-safe JSON cache (memory + disk)
   mcp_server.py        # MCP server (same tools/data as the API, same cache)
+  db.py                 # Postgres access: qvai settings + conversation log
+  bot.py                 # qvai Telegram bot (long polling + NVIDIA NIM)
+  admin.py                # admin panel (login, dashboard, conversations, settings)
+  assets.py                # static asset cache-busting (content hash)
   templates/
     index.html       # bilingual landing page
+    admin_*.html      # admin panel templates
   static/
     style.css
+    admin.css          # admin panel styles
 data/
   cache.json         # created at runtime, gitignored
 Dockerfile
-docker-compose.yml
+docker-compose.yml       # includes the Postgres service
 requirements.txt
 .env.example
 ```

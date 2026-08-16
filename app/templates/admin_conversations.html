@@ -1,0 +1,33 @@
+{% extends "admin_base.html" %}
+{% block title %}Conversaciones{% endblock %}
+{% block content %}
+<h1>Conversaciones</h1>
+<p class="admin-sub">Todos los chats de Telegram que le han hablado a qvai.</p>
+
+<div class="admin-card">
+  {% if chats %}
+  <table class="admin-table">
+    <thead>
+      <tr>
+        <th>Usuario</th>
+        <th>Último mensaje</th>
+        <th>Mensajes</th>
+        <th>Última actividad</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for chat in chats %}
+      <tr>
+        <td><a href="/admin/conversations/{{ chat.chat_id }}">{{ chat.first_name or chat.username or chat.chat_id }}</a>{% if chat.username %} <span style="color: var(--text-dim);">@{{ chat.username }}</span>{% endif %}</td>
+        <td style="max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ chat.last_message }}</td>
+        <td>{{ chat.message_count }}</td>
+        <td style="color: var(--text-dim); white-space: nowrap;">{{ chat.last_message_at.strftime("%d/%m/%Y %H:%M") }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="admin-empty">Todavía no hay conversaciones. En cuanto alguien le escriba a qvai en Telegram, aparecerán aquí.</div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "admin_base.html" %}
+{% block title %}Chat {{ chat_id }}{% endblock %}
+{% block content %}
+<p><a href="/admin/conversations" class="text-link">&larr; Todas las conversaciones</a></p>
+<h1>Chat {{ chat_id }}</h1>
+{% if messages %}
+<p class="admin-sub">{{ messages[0].first_name or messages[0].username or "" }}{% if messages[0].username %} (@{{ messages[0].username }}){% endif %} &middot; {{ messages|length }} mensajes</p>
+{% endif %}
+
+<div class="admin-card">
+  {% if messages %}
+  <div class="chat-thread">
+    {% for m in messages %}
+    <div>
+      <div class="chat-bubble {{ 'user' if m.role == 'user' else 'assistant' }}">{{ m.content }}</div>
+      <div class="chat-meta" style="{{ 'text-align: right;' if m.role == 'user' else '' }}">
+        {{ 'Usuario' if m.role == 'user' else 'qvai' }} &middot; {{ m.created_at.strftime("%d/%m/%Y %H:%M") }}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="admin-empty">No hay mensajes en esta conversación.</div>
+  {% endif %}
+</div>
+{% endblock %}
