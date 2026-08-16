@@ -62,16 +62,18 @@ curl http://localhost:8000/api/v2/rates
 
 ### Example response — `/api/v2/rates/EUR`
 
+This is a real response, captured live from the running API:
+
 ```json
 {
   "success": true,
-  "requested_at": "2026-08-15T14:32:07.123456+00:00",
+  "requested_at": "2026-08-16T02:20:09.819429+00:00",
   "interval_minutes": 480,
   "data": {
     "code": "EUR",
     "name_es": "Euro",
     "name_en": "Euro",
-    "scraped_at": "2026-08-15T14:00:11.905000+00:00",
+    "scraped_at": "2026-08-16T02:13:01.463799+00:00",
     "source_url": "https://eltoque.com/tasas-de-cambio-cuba/euro",
     "source_updated_label": "15 de agosto de 2026 a las 08:03 a. m.",
     "informal": {
