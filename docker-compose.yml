@@ -1,0 +1,12 @@
+services:
+  api:
+    build: .
+    container_name: cuba-usd-rate-api
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+      - SCRAPE_INTERVAL_MINUTES=${SCRAPE_INTERVAL_MINUTES:-60}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
