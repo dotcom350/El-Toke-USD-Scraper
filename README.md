@@ -4,7 +4,7 @@
 
 API JSON gratuita para la tasa informal (calle) y las tasas oficiales de bancos de **las 9 monedas que publica elTOQUE** (USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF), scrapeadas desde [elTOQUE](https://eltoque.com/tasas-de-cambio-cuba) usando [Firecrawl](https://www.firecrawl.dev) (necesario porque el sitio está detrás de un challenge de Cloudflare que un `curl`/`requests` normal no puede pasar).
 
-Landing page en vivo: `http://localhost:8000/` (o donde la despliegues) — bilingüe (inglés/español), con modo claro/oscuro, muestra la tasa actual con animación de conteo y una tabla con las 9 monedas, e incluye ejemplos de código listos para copiar.
+Landing page en vivo: `http://localhost:8000/` (o donde la despliegues) — español por defecto (con toggle a inglés), modo claro/oscuro (oscuro es negro puro), responsive para móviles, muestra la tasa actual con animación de conteo y una tabla con las 9 monedas, e incluye ejemplos de código listos para copiar.
 
 También es un **servidor [MCP](https://modelcontextprotocol.io)** (`/mcp/`), así que agentes como Claude pueden consultar las tasas como *tools* en vez de HTTP crudo — ver la sección [Conectar vía MCP](#conectar-vía-mcp) abajo.
 

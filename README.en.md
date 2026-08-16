@@ -4,7 +4,7 @@
 
 Free JSON API for the informal (street) and official bank rates of **all 9 currencies elTOQUE publishes** (USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF), scraped from [elTOQUE](https://eltoque.com/tasas-de-cambio-cuba) via [Firecrawl](https://www.firecrawl.dev) (needed because the site sits behind a Cloudflare challenge that a plain `curl`/`requests` can't pass).
 
-Live demo landing page: `http://localhost:8000/` (or wherever you deploy it) — bilingual (English/Spanish), light/dark theme, shows the current rate with a count-up animation and a table of all 9 currencies, and includes copy-pasteable code snippets.
+Live demo landing page: `http://localhost:8000/` (or wherever you deploy it) — Spanish by default (with an English toggle), light/dark theme (dark is true black), mobile-responsive, shows the current rate with a count-up animation and a table of all 9 currencies, and includes copy-pasteable code snippets.
 
 It's also an **[MCP](https://modelcontextprotocol.io) server** (`/mcp/`), so agents like Claude can query rates as tools instead of raw HTTP — see [Connect via MCP](#connect-via-mcp) below.
 
