@@ -32,8 +32,8 @@ The default (hourly) leaves headroom for manual testing, restarts, and the immed
 ## Quickstart (Docker Compose)
 
 ```bash
-git clone https://github.com/your-user/cuba-usd-rate-api.git
-cd cuba-usd-rate-api
+git clone https://github.com/dotcom350/El-Toke-USD-Scraper.git
+cd El-Toke-USD-Scraper
 cp .env.example .env
 # edit .env and set FIRECRAWL_API_KEY=fc-...
 docker compose up -d --build

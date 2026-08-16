@@ -32,8 +32,8 @@ El valor por defecto (cada hora) deja margen para pruebas manuales, reinicios, y
 ## Inicio rápido (Docker Compose)
 
 ```bash
-git clone https://github.com/tu-usuario/cuba-usd-rate-api.git
-cd cuba-usd-rate-api
+git clone https://github.com/dotcom350/El-Toke-USD-Scraper.git
+cd El-Toke-USD-Scraper
 cp .env.example .env
 # edita .env y pon FIRECRAWL_API_KEY=fc-...
 docker compose up -d --build
