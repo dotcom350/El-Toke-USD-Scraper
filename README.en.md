@@ -4,7 +4,9 @@
 
 Free JSON API for the informal (street) and official bank rates of **all 9 currencies elTOQUE publishes** (USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF), scraped from [elTOQUE](https://eltoque.com/tasas-de-cambio-cuba) via [Firecrawl](https://www.firecrawl.dev) (needed because the site sits behind a Cloudflare challenge that a plain `curl`/`requests` can't pass).
 
-Live demo landing page: `http://localhost:8000/` (or wherever you deploy it) — bilingual, shows the current rate plus a table of all 9 currencies, and includes copy-pasteable code snippets.
+Live demo landing page: `http://localhost:8000/` (or wherever you deploy it) — bilingual (English/Spanish), light/dark theme, shows the current rate with a count-up animation and a table of all 9 currencies, and includes copy-pasteable code snippets.
+
+It's also an **[MCP](https://modelcontextprotocol.io) server** (`/mcp/`), so agents like Claude can query rates as tools instead of raw HTTP — see [Connect via MCP](#connect-via-mcp) below.
 
 ---
 
@@ -57,8 +59,34 @@ curl http://localhost:8000/api/v2/rates
 | `GET` | `/api/v2/rates/{code}` | A single currency by code (`USD`, `EUR`, `MLC`, `CAD`, `MXN`, `ZELLE`, `CLA`, `GBP`, `CHF`) |
 | `GET` | `/api/v1/dolar` | USD only, in the original response shape (kept for backward compatibility) |
 | `GET` | `/api/v1/health` | Service status and last successful scrape time |
+| `ANY` | `/mcp/` | MCP server (Streamable HTTP) - see below |
 | `GET` | `/docs` | Interactive Swagger / OpenAPI docs |
 | `GET` | `/` | Bilingual landing page |
+
+## Connect via MCP
+
+The API exposes an [MCP](https://modelcontextprotocol.io) server at `/mcp/` with 3 tools: `list_currencies`, `get_all_rates` and `get_rate(code)`. Same as the REST API, the tools only read the cache - they never trigger a live scrape. No API key.
+
+With [Claude Code](https://claude.com/claude-code):
+
+```bash
+claude mcp add --transport http cuba-rates http://localhost:8000/mcp/
+```
+
+Or in any MCP client's JSON config:
+
+```json
+{
+  "mcpServers": {
+    "cuba-rates": {
+      "type": "http",
+      "url": "http://localhost:8000/mcp/"
+    }
+  }
+}
+```
+
+> Self-hosted on whatever domain/port you pick, so MCP's DNS-rebinding protection ships disabled by default (the data served is public, read-only, side-effect-free). If you deploy on a fixed domain and want that protection back, configure it in `app/mcp_server.py` (`TransportSecuritySettings`).
 
 ### Example response — `/api/v2/rates/EUR`
 
@@ -119,6 +147,7 @@ app/
   currencies.py      # registry of the 9 currencies, in elTOQUE's order
   scraper.py          # Firecrawl call + markdown -> structured JSON parsing
   cache.py            # thread-safe JSON cache (memory + disk)
+  mcp_server.py        # MCP server (same tools/data as the API, same cache)
   templates/
     index.html       # bilingual landing page
   static/

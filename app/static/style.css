@@ -1,4 +1,5 @@
-:root {
+:root,
+[data-theme="dark"] {
   --bg: #0a0e17;
   --bg-soft: #111726;
   --card: #151c2c;
@@ -8,9 +9,23 @@
   --accent: #34d399;
   --accent-soft: rgba(52, 211, 153, 0.12);
   --blue: #60a5fa;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.28);
   --radius: 14px;
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+}
+
+[data-theme="light"] {
+  --bg: #f6f8fb;
+  --bg-soft: #eef1f6;
+  --card: #ffffff;
+  --border: #dde3ed;
+  --text: #101623;
+  --text-dim: #5b6478;
+  --accent: #0f9d6e;
+  --accent-soft: rgba(15, 157, 110, 0.1);
+  --blue: #2563eb;
+  --shadow: 0 1px 2px rgba(16, 22, 35, 0.04), 0 8px 24px rgba(16, 22, 35, 0.06);
 }
 
 * {
@@ -23,11 +38,21 @@ html, body {
 }
 
 body {
-  background: radial-gradient(circle at top, #101827 0%, var(--bg) 55%);
+  background: var(--bg-gradient, var(--bg));
   color: var(--text);
   font-family: var(--sans);
   line-height: 1.6;
   min-height: 100vh;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+[data-theme="dark"] body,
+:root:not([data-theme="light"]) body {
+  --bg-gradient: radial-gradient(circle at top, #101827 0%, var(--bg) 55%);
+}
+
+[data-theme="light"] body {
+  --bg-gradient: radial-gradient(circle at top, #ffffff 0%, var(--bg) 55%);
 }
 
 .wrap {
@@ -50,6 +75,7 @@ header.top {
   font-weight: 700;
   font-size: 1.05rem;
   letter-spacing: -0.01em;
+  color: var(--text);
 }
 
 .brand .dot {
@@ -88,6 +114,43 @@ header.top {
 .lang-toggle button.active {
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  cursor: pointer;
+  padding: 0;
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+}
+
+.theme-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.theme-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
+.theme-toggle .icon-moon {
+  display: none;
+}
+
+[data-theme="light"] .theme-toggle .icon-sun {
+  display: none;
+}
+
+[data-theme="light"] .theme-toggle .icon-moon {
+  display: block;
 }
 
 .gh-link {
@@ -129,6 +192,7 @@ h1 {
   line-height: 1.1;
   letter-spacing: -0.02em;
   margin: 0 0 0.9rem;
+  color: var(--text);
 }
 
 .lede {
@@ -156,6 +220,8 @@ h1 {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 1.5rem;
+  box-shadow: var(--shadow);
+  transition: background-color 0.25s ease, border-color 0.25s ease;
 }
 
 .price-card .label {
@@ -173,6 +239,7 @@ h1 {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
+  color: var(--text);
 }
 
 .price-card .price .unit {
@@ -238,12 +305,14 @@ h1 {
 
 section {
   margin-bottom: 2.75rem;
+  color: var(--text);
 }
 
 h2 {
   font-size: 1.4rem;
   letter-spacing: -0.01em;
   margin: 0 0 0.4rem;
+  color: var(--text);
 }
 
 .section-sub {
@@ -310,6 +379,10 @@ table.endpoints th, table.endpoints td {
   text-align: left;
   padding: 0.7rem 0.6rem;
   border-bottom: 1px solid var(--border);
+  /* explicit (not inherited) so dynamically-inserted rows repaint correctly
+     when the theme toggles - color inheritance through <table> doesn't
+     reliably recompute on a live custom-property change in some browsers */
+  color: var(--text);
 }
 
 table.endpoints th {
@@ -377,4 +450,48 @@ div[data-i18n].lang-active {
 
 span[data-i18n].lang-active {
   display: inline;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.wrap > * {
+  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.wrap > *:nth-child(1) { animation-delay: 0s; }
+.wrap > *:nth-child(2) { animation-delay: 0.04s; }
+.wrap > *:nth-child(3) { animation-delay: 0.08s; }
+.wrap > *:nth-child(4) { animation-delay: 0.12s; }
+.wrap > *:nth-child(5) { animation-delay: 0.16s; }
+.wrap > *:nth-child(6) { animation-delay: 0.2s; }
+.wrap > *:nth-child(7) { animation-delay: 0.24s; }
+.wrap > *:nth-child(8) { animation-delay: 0.28s; }
+.wrap > *:nth-child(9) { animation-delay: 0.32s; }
+.wrap > *:nth-child(10) { animation-delay: 0.36s; }
+.wrap > *:nth-child(11) { animation-delay: 0.4s; }
+.wrap > *:nth-child(12) { animation-delay: 0.44s; }
+
+.card:hover {
+  border-color: var(--accent);
+}
+
+.price-card .price .value {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wrap > *,
+  .price-card .price .value {
+    animation: none !important;
+    transition: none !important;
+  }
 }

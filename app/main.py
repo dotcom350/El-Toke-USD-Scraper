@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.cache import RateCache
 from app.currencies import CURRENCIES, CURRENCIES_BY_CODE
+from app.mcp_server import build_mcp_asgi_app
 from app.scraper import scrape_all
 
 logging.basicConfig(level=logging.INFO)
@@ -24,9 +25,36 @@ cache = RateCache(path=CACHE_PATH)
 scheduler = AsyncIOScheduler()
 
 
+def _get_currency_entry(code: str) -> dict | None:
+    snapshot = cache.get()
+    if not snapshot:
+        return None
+    return snapshot.get("currencies", {}).get(code)
+
+
+def _get_all_currencies() -> list | None:
+    snapshot = cache.get()
+    if not snapshot:
+        return None
+    currencies = snapshot.get("currencies", {})
+    return [currencies[c["code"]] for c in CURRENCIES if c["code"] in currencies]
+
+
+mcp_asgi_app = build_mcp_asgi_app(fetch_all=_get_all_currencies, fetch_one=_get_currency_entry)
+
+
 async def refresh_job() -> None:
     try:
         data = await scrape_all(FIRECRAWL_API_KEY)
+        # Merge onto the existing cache instead of replacing it wholesale,
+        # so a currency that fails this cycle (transient Firecrawl error)
+        # keeps showing its last-known-good rate instead of disappearing
+        # until the next successful scrape.
+        existing = cache.get()
+        if existing and existing.get("currencies"):
+            merged = dict(existing["currencies"])
+            merged.update(data["currencies"])
+            data["currencies"] = merged
         cache.set(data)
         ok_count = len(data["currencies"])
         logger.info(
@@ -51,7 +79,11 @@ async def lifespan(app: FastAPI):
         await refresh_job()
         scheduler.add_job(refresh_job, "interval", minutes=INTERVAL_MINUTES, id="refresh")
         scheduler.start()
-    yield
+    # The MCP sub-app manages its own background task group via its own
+    # lifespan; mounting it doesn't wire that up automatically, so it has to
+    # be entered here alongside our own startup/shutdown.
+    async with mcp_asgi_app.router.lifespan_context(mcp_asgi_app):
+        yield
     if scheduler.running:
         scheduler.shutdown(wait=False)
 
@@ -64,14 +96,8 @@ app = FastAPI(
 )
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+app.mount("/mcp", mcp_asgi_app)
 templates = Jinja2Templates(directory="app/templates")
-
-
-def _get_currency_entry(code: str) -> dict | None:
-    snapshot = cache.get()
-    if not snapshot:
-        return None
-    return snapshot.get("currencies", {}).get(code)
 
 
 def _v1_dolar_shape(usd_entry: dict) -> dict:
