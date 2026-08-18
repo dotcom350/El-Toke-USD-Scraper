@@ -139,7 +139,16 @@ def build_admin_router(bot_manager: BotManager) -> APIRouter:
         system_prompt: str = Form(...),
         temperature: float = Form(0.7),
         max_tokens: int = Form(1024),
+        history_limit: int = Form(10),
         enabled: str = Form(None),
+        welcome_message: str = Form(...),
+        help_message: str = Form(...),
+        stop_message: str = Form(...),
+        dev_activation_message: str = Form(...),
+        dev_system_prompt: str = Form(...),
+        translator_activation_message: str = Form(...),
+        translator_system_prompt: str = Form(...),
+        price_dolar_template: str = Form(...),
     ):
         redirect = _require_auth(request)
         if redirect:
@@ -153,7 +162,16 @@ def build_admin_router(bot_manager: BotManager) -> APIRouter:
             "system_prompt": system_prompt,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            "history_limit": max(1, min(history_limit, 50)),
             "enabled": enabled is not None,
+            "welcome_message": welcome_message,
+            "help_message": help_message,
+            "stop_message": stop_message,
+            "dev_activation_message": dev_activation_message,
+            "dev_system_prompt": dev_system_prompt,
+            "translator_activation_message": translator_activation_message,
+            "translator_system_prompt": translator_system_prompt,
+            "price_dolar_template": price_dolar_template,
         }
         # Only overwrite a secret if the admin actually typed a new value -
         # the form leaves these blank on load so we never echo secrets back.

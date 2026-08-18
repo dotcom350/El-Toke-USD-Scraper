@@ -12,10 +12,12 @@ on every token change.
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import Callable, Optional
 
 from openai import AsyncOpenAI
-from telegram import Update
+from telegram import BotCommand, Update
+from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from app import db
@@ -24,6 +26,21 @@ logger = logging.getLogger("qvai-bot")
 
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 DEFAULT_MODEL = "nvidia/nemotron-3.5-lightning-30b-a3b"
+
+# mode -> (settings key holding that mode's system prompt, fallback constant)
+MODE_PROMPTS = {
+    "dev": ("dev_system_prompt", db.DEFAULT_DEV_SYSTEM_PROMPT),
+    "traductor": ("translator_system_prompt", db.DEFAULT_TRANSLATOR_SYSTEM_PROMPT),
+}
+
+BOT_COMMANDS = [
+    BotCommand("start", "Iniciar Bot 🚀"),
+    BotCommand("stop", "Parar Bot 🛑"),
+    BotCommand("help", "Comando de Ayuda 📖"),
+    BotCommand("dev", "Modo Programador 🛠️"),
+    BotCommand("traductor", "Modo Translator 1.0 🌐"),
+    BotCommand("preciodolar", "Tasa de cambio del dólar 💵"),
+]
 
 
 def format_rates_summary(rates: Optional[list]) -> str:
@@ -44,6 +61,25 @@ def format_rates_summary(rates: Optional[list]) -> str:
     return "\n".join(lines)
 
 
+def _find_currency(rates: Optional[list], code: str) -> Optional[dict]:
+    for r in rates or []:
+        if r.get("code") == code:
+            return r
+    return None
+
+
+async def _reply(update: Update, text: str) -> None:
+    """Sends with Telegram Markdown, falling back to plain text if the
+    admin-edited content has unbalanced markdown that Telegram refuses to
+    parse (e.g. a stray `*` or `_`) - a broken reply is worse than a
+    plain-text one.
+    """
+    try:
+        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    except Exception:
+        await update.message.reply_text(text)
+
+
 class BotManager:
     """Owns the python-telegram-bot Application instance and can be
     stopped/restarted at runtime when the admin changes the token."""
@@ -54,12 +90,65 @@ class BotManager:
         self.running = False
 
     async def handle_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        chat = update.effective_chat
+        if chat:
+            await db.set_chat_mode(chat.id, "normal")
         settings = await db.get_settings()
-        name = settings.get("bot_name") or "qvai"
-        await update.message.reply_text(
-            f"¡Hola! Soy {name}. Pregúntame por el precio del dólar, euro, MLC y las demás "
-            "monedas, o simplemente conversa conmigo de lo que quieras."
+        await _reply(update, settings.get("welcome_message") or db.DEFAULT_WELCOME_MESSAGE)
+
+    async def handle_stop(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        chat = update.effective_chat
+        if chat:
+            await db.set_chat_mode(chat.id, "normal")
+        settings = await db.get_settings()
+        await _reply(update, settings.get("stop_message") or db.DEFAULT_STOP_MESSAGE)
+
+    async def handle_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        settings = await db.get_settings()
+        await _reply(update, settings.get("help_message") or db.DEFAULT_HELP_MESSAGE)
+
+    async def handle_dev(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        chat = update.effective_chat
+        if chat:
+            await db.set_chat_mode(chat.id, "dev")
+        settings = await db.get_settings()
+        await _reply(update, settings.get("dev_activation_message") or db.DEFAULT_DEV_ACTIVATION_MESSAGE)
+
+    async def handle_traductor(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        chat = update.effective_chat
+        if chat:
+            await db.set_chat_mode(chat.id, "traductor")
+        settings = await db.get_settings()
+        await _reply(
+            update, settings.get("translator_activation_message") or db.DEFAULT_TRANSLATOR_ACTIVATION_MESSAGE
         )
+
+    async def handle_preciodolar(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        settings = await db.get_settings()
+        usd = _find_currency(self._get_rates(), "USD")
+        if not usd or not usd.get("informal"):
+            await _reply(update, "Todavía no tengo la tasa cargada - intenta en un momento.")
+            return
+        informal = usd["informal"]
+        conversions = informal.get("conversions") or {}
+        cadeca = (usd.get("formal") or {}).get("CADECA Casas de cambio") or {}
+        scraped_at = usd.get("scraped_at")
+        updated = scraped_at
+        if scraped_at:
+            try:
+                updated = datetime.fromisoformat(scraped_at).astimezone().strftime("%d/%m/%Y %H:%M")
+            except ValueError:
+                pass
+        template = settings.get("price_dolar_template") or db.DEFAULT_PRICE_DOLAR_TEMPLATE
+        text = template.format(
+            cup=informal.get("cup", "—"),
+            mlc=conversions.get("MLC", "—"),
+            eur=conversions.get("EUR", "—"),
+            compra=cadeca.get("compra", "—"),
+            venta=cadeca.get("venta", "—"),
+            updated=updated or "—",
+        )
+        await _reply(update, text)
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.message or not update.message.text:
@@ -82,11 +171,17 @@ class BotManager:
 
         await db.log_message(chat_id, user_id, username, first_name, "user", text)
 
-        rates_text = format_rates_summary(self._get_rates())
-        system_prompt = (settings.get("system_prompt") or db.DEFAULT_SYSTEM_PROMPT).replace(
-            "{RATES}", rates_text
-        )
-        history = await db.get_recent_messages(chat_id, limit=16)
+        mode = await db.get_chat_mode(chat_id) if chat_id else "normal"
+        mode_key, mode_fallback = MODE_PROMPTS.get(mode, (None, None))
+        if mode_key:
+            system_prompt = settings.get(mode_key) or mode_fallback
+        else:
+            rates_text = format_rates_summary(self._get_rates())
+            system_prompt = (settings.get("system_prompt") or db.DEFAULT_SYSTEM_PROMPT).replace(
+                "{RATES}", rates_text
+            )
+        history_limit = int(settings.get("history_limit") or 10)
+        history = await db.get_recent_messages(chat_id, limit=history_limit)
 
         messages = [{"role": "system", "content": system_prompt}]
         messages += [{"role": m["role"], "content": m["content"]} for m in history]
@@ -107,7 +202,7 @@ class BotManager:
             reply = "Se me trabó el cerebro un segundo - intenta de nuevo en un momento."
 
         await db.log_message(chat_id, user_id, username, first_name, "assistant", reply)
-        await update.message.reply_text(reply)
+        await _reply(update, reply)
 
     async def start(self, token: str) -> None:
         if self.running:
@@ -117,11 +212,17 @@ class BotManager:
         try:
             self.app = Application.builder().token(token).build()
             self.app.add_handler(CommandHandler("start", self.handle_start))
+            self.app.add_handler(CommandHandler("stop", self.handle_stop))
+            self.app.add_handler(CommandHandler("help", self.handle_help))
+            self.app.add_handler(CommandHandler("dev", self.handle_dev))
+            self.app.add_handler(CommandHandler("traductor", self.handle_traductor))
+            self.app.add_handler(CommandHandler("preciodolar", self.handle_preciodolar))
             self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
             async def _connect():
                 await self.app.initialize()
                 await self.app.start()
+                await self.app.bot.set_my_commands(BOT_COMMANDS)
                 await self.app.updater.start_polling(drop_pending_updates=True)
 
             # An invalid/malformed-but-plausible token can otherwise hang here

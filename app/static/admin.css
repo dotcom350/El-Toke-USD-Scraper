@@ -276,6 +276,31 @@ table.admin-table a:hover {
   gap: 1rem;
 }
 
+.md-preview {
+  margin-top: 0.4rem;
+  padding: 0.7rem 0.85rem;
+  background: var(--code-bg, var(--bg-soft));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--code-text, var(--text));
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.md-preview:empty::before {
+  content: "Vista previa...";
+  color: var(--text-dim);
+}
+
+.md-preview code {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  font-family: var(--mono);
+}
+
 .admin-form .checkbox-field {
   display: flex;
   align-items: center;

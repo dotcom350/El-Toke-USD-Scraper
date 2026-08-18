@@ -33,6 +33,72 @@
   </div>
 
   <div class="admin-card">
+    <h2>Mensajes generales</h2>
+    <p class="admin-sub">Soportan Markdown de Telegram: <code>*negrita*</code>, <code>_cursiva_</code>, <code>`código`</code>.</p>
+
+    <div class="field">
+      <label for="welcome_message">Bienvenida (/start)</label>
+      <textarea id="welcome_message" name="welcome_message" class="md-editable" required>{{ settings.welcome_message }}</textarea>
+      <div class="md-preview" data-preview-for="welcome_message"></div>
+    </div>
+
+    <div class="field">
+      <label for="stop_message">Al salir de un modo (/stop)</label>
+      <textarea id="stop_message" name="stop_message" class="md-editable" required>{{ settings.stop_message }}</textarea>
+      <div class="md-preview" data-preview-for="stop_message"></div>
+    </div>
+
+    <div class="field">
+      <label for="help_message">Ayuda (/help)</label>
+      <textarea id="help_message" name="help_message" class="md-editable" required style="min-height: 260px;">{{ settings.help_message }}</textarea>
+      <div class="md-preview" data-preview-for="help_message"></div>
+    </div>
+  </div>
+
+  <div class="admin-card">
+    <h2>Modo Programador (/dev)</h2>
+
+    <div class="field">
+      <label for="dev_activation_message">Mensaje al activar el modo</label>
+      <textarea id="dev_activation_message" name="dev_activation_message" class="md-editable" required>{{ settings.dev_activation_message }}</textarea>
+      <div class="md-preview" data-preview-for="dev_activation_message"></div>
+    </div>
+
+    <div class="field">
+      <label for="dev_system_prompt">Personalidad en este modo (system prompt)</label>
+      <textarea id="dev_system_prompt" name="dev_system_prompt" required>{{ settings.dev_system_prompt }}</textarea>
+      <div class="hint">No se muestra al usuario - controla cómo responde la IA mientras el chat está en este modo.</div>
+    </div>
+  </div>
+
+  <div class="admin-card">
+    <h2>Modo Translator 1.0 (/traductor)</h2>
+
+    <div class="field">
+      <label for="translator_activation_message">Mensaje al activar el modo</label>
+      <textarea id="translator_activation_message" name="translator_activation_message" class="md-editable" required>{{ settings.translator_activation_message }}</textarea>
+      <div class="md-preview" data-preview-for="translator_activation_message"></div>
+    </div>
+
+    <div class="field">
+      <label for="translator_system_prompt">Personalidad en este modo (system prompt)</label>
+      <textarea id="translator_system_prompt" name="translator_system_prompt" required>{{ settings.translator_system_prompt }}</textarea>
+      <div class="hint">No se muestra al usuario - controla cómo responde la IA mientras el chat está en este modo.</div>
+    </div>
+  </div>
+
+  <div class="admin-card">
+    <h2>Comando /preciodolar</h2>
+
+    <div class="field">
+      <label for="price_dolar_template">Plantilla de respuesta</label>
+      <textarea id="price_dolar_template" name="price_dolar_template" class="md-editable" required>{{ settings.price_dolar_template }}</textarea>
+      <div class="md-preview" data-preview-for="price_dolar_template"></div>
+      <div class="hint">Placeholders disponibles: <code>{cup}</code>, <code>{mlc}</code>, <code>{eur}</code>, <code>{compra}</code>, <code>{venta}</code>, <code>{updated}</code>.</div>
+    </div>
+  </div>
+
+  <div class="admin-card">
     <h2>Credenciales</h2>
 
     <div class="field">
@@ -56,7 +122,7 @@
       <input type="text" id="model" name="model" value="{{ settings.model }}" required />
     </div>
 
-    <div class="row">
+    <div class="row" style="grid-template-columns: 1fr 1fr 1fr;">
       <div class="field">
         <label for="temperature">Temperature</label>
         <input type="number" id="temperature" name="temperature" value="{{ settings.temperature|round(2) }}" step="0.1" min="0" max="2" required />
@@ -65,7 +131,12 @@
         <label for="max_tokens">Max tokens</label>
         <input type="number" id="max_tokens" name="max_tokens" value="{{ settings.max_tokens }}" step="1" min="64" max="16384" required />
       </div>
+      <div class="field">
+        <label for="history_limit">Memoria (mensajes)</label>
+        <input type="number" id="history_limit" name="history_limit" value="{{ settings.history_limit }}" step="1" min="1" max="50" required />
+      </div>
     </div>
+    <div class="hint" style="margin-top: -0.6rem; margin-bottom: 1.1rem;">Cuántos mensajes anteriores de la conversación (usuario + qvai) se le mandan a la IA como contexto/memoria en cada respuesta.</div>
   </div>
 
   <button type="submit" class="admin-btn">Guardar y reiniciar el bot</button>
@@ -73,4 +144,22 @@
   <span class="admin-saved-msg">✓ Guardado</span>
   {% endif %}
 </form>
+
+<script>
+  function mdPreviewToHtml(text) {
+    const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    let html = esc(text);
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+    html = html.replace(/\*([^\*\n]+)\*/g, "<b>$1</b>");
+    html = html.replace(/_([^_\n]+)_/g, "<i>$1</i>");
+    return html;
+  }
+  document.querySelectorAll(".md-editable").forEach((ta) => {
+    const preview = document.querySelector(`[data-preview-for="${ta.id}"]`);
+    if (!preview) return;
+    const render = () => { preview.innerHTML = mdPreviewToHtml(ta.value); };
+    render();
+    ta.addEventListener("input", render);
+  });
+</script>
 {% endblock %}

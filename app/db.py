@@ -30,6 +30,77 @@ DEFAULT_SYSTEM_PROMPT = (
     "Responde siempre en español, de forma breve y clara."
 )
 
+DEFAULT_WELCOME_MESSAGE = (
+    "¡Hola! Soy *qvai* 🤖, tu asistente de IA en Telegram.\n\n"
+    "Pregúntame por el precio del dólar, euro, MLC y las demás monedas en Cuba, o simplemente "
+    "conversa conmigo de lo que quieras.\n\n"
+    "Escribe /help para ver todos los comandos disponibles."
+)
+
+DEFAULT_HELP_MESSAGE = (
+    "📚 *Comandos Disponibles*\n\n"
+    "/start Iniciar Bot 🚀\n"
+    "Este comando reinicia el bot y da la bienvenida al usuario. Úsalo para comenzar de nuevo "
+    "o para recibir una nueva bienvenida.\n\n"
+    "/stop Parar Bot 🛑\n"
+    "Este comando detiene cualquier función o comando en ejecución y regresa al modo normal. "
+    "Útil si deseas interrumpir cualquier proceso en curso.\n\n"
+    "/help Comando de Ayuda 📖\n"
+    "Este comando muestra una lista de todos los comandos disponibles y sus descripciones, "
+    "ayudando al usuario a entender cómo utilizar QVAi de manera efectiva.\n\n"
+    "/dev Modo Programador 🛠️\n"
+    "En este modo, QVAi actúa como asistente y experto en desarrollo web. Puede ayudar con "
+    "cualquier lenguaje de programación. El usuario debe decir qué quiere hacer, y QVAi lo "
+    "guiará paso a paso en el proceso.\n\n"
+    "/traductor Modo Translator 1.0 🌐\n"
+    "Cuando está activado, QVAi se convierte en un asistente amigable y experto en "
+    "traducción. El usuario puede indicar a qué idioma desea traducir el texto, y QVAi se "
+    "encargará de traducirlo.\n\n"
+    "/preciodolar Tasa de cambio del dólar en Cuba 💵\n"
+    "Con este comando, QVAi proporciona la tasa de cambio actualizada del dólar en Cuba. El "
+    "usuario recibirá la información más reciente sobre la moneda local.\n\n"
+    "QVAi es un asistente amigable y experto creado por @DAVIDRT20, disponible para ayudar "
+    "con muchas cosas."
+)
+
+DEFAULT_STOP_MESSAGE = "✅ Saliste del modo actual. Volví al modo normal - pregúntame lo que quieras."
+
+DEFAULT_DEV_ACTIVATION_MESSAGE = (
+    "🛠️ *Modo Programador activado*\n\n"
+    "Ahora soy tu asistente experto en desarrollo web y programación. Cuéntame qué quieres "
+    "construir o resolver y te guío paso a paso, en el lenguaje o framework que necesites.\n\n"
+    "Escribe /stop cuando quieras salir de este modo."
+)
+
+DEFAULT_DEV_SYSTEM_PROMPT = (
+    "Eres qvai en Modo Programador: un asistente y experto en desarrollo web y en cualquier "
+    "lenguaje de programación (Python, JavaScript, HTML/CSS, SQL, etc). El usuario te va a "
+    "decir qué quiere construir o el problema que tiene, y tú lo guías paso a paso, con "
+    "ejemplos de código claros y explicaciones concisas. Responde en español."
+)
+
+DEFAULT_TRANSLATOR_ACTIVATION_MESSAGE = (
+    "🌐 *Modo Translator 1.0 activado*\n\n"
+    "Dime a qué idioma quieres traducir, y después mándame el texto (o mándame el texto y el "
+    "idioma de una vez).\n\n"
+    "Escribe /stop cuando quieras salir de este modo."
+)
+
+DEFAULT_TRANSLATOR_SYSTEM_PROMPT = (
+    "Eres qvai en Modo Translator 1.0: un asistente experto y amigable en traducción. El "
+    "usuario te indicará a qué idioma quiere traducir un texto (o quedará claro por "
+    "contexto) y tú traduces con precisión y naturalidad, devolviendo solo la traducción a "
+    "menos que te pidan una explicación."
+)
+
+DEFAULT_PRICE_DOLAR_TEMPLATE = (
+    "💵 *Tasa de cambio del dólar en Cuba*\n\n"
+    "Informal: *{cup} CUP*\n"
+    "1 USD también equivale a: {mlc} MLC · {eur} EUR\n"
+    "Bancos (CADECA): {compra} / {venta} CUP\n\n"
+    "Actualizado: {updated}"
+)
+
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS bot_settings (
     id INTEGER PRIMARY KEY DEFAULT 1,
@@ -40,6 +111,7 @@ CREATE TABLE IF NOT EXISTS bot_settings (
     system_prompt TEXT NOT NULL DEFAULT '',
     temperature DOUBLE PRECISION NOT NULL DEFAULT 0.7,
     max_tokens INTEGER NOT NULL DEFAULT 1024,
+    history_limit INTEGER NOT NULL DEFAULT 10,
     enabled BOOLEAN NOT NULL DEFAULT true,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (id = 1)
@@ -57,7 +129,31 @@ CREATE TABLE IF NOT EXISTS conversations (
 );
 
 CREATE INDEX IF NOT EXISTS idx_conversations_chat_id ON conversations (chat_id, created_at);
+
+-- Per-chat active mode (normal / dev / traductor), so a plain text message
+-- knows which system prompt to use without the user repeating the command.
+CREATE TABLE IF NOT EXISTS chat_state (
+    chat_id BIGINT PRIMARY KEY,
+    mode TEXT NOT NULL DEFAULT 'normal',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
+
+# Added after the initial release - kept as ALTER TABLE ... ADD COLUMN IF NOT
+# EXISTS (rather than folding into SCHEMA_SQL's CREATE TABLE) so existing
+# installs pick them up without a manual migration step. Defaults are filled
+# in via a parameterized UPDATE afterwards rather than embedded in the DDL,
+# so none of this free-form text needs SQL-escaping.
+MESSAGE_COLUMNS = {
+    "welcome_message": DEFAULT_WELCOME_MESSAGE,
+    "help_message": DEFAULT_HELP_MESSAGE,
+    "stop_message": DEFAULT_STOP_MESSAGE,
+    "dev_activation_message": DEFAULT_DEV_ACTIVATION_MESSAGE,
+    "dev_system_prompt": DEFAULT_DEV_SYSTEM_PROMPT,
+    "translator_activation_message": DEFAULT_TRANSLATOR_ACTIVATION_MESSAGE,
+    "translator_system_prompt": DEFAULT_TRANSLATOR_SYSTEM_PROMPT,
+    "price_dolar_template": DEFAULT_PRICE_DOLAR_TEMPLATE,
+}
 
 _pool: Optional[asyncpg.Pool] = None
 
@@ -79,10 +175,17 @@ async def init_pool() -> None:
             # back as 0.699999988079071. Migrate older installs that still
             # have the REAL column to DOUBLE PRECISION.
             await conn.execute("ALTER TABLE bot_settings ALTER COLUMN temperature TYPE DOUBLE PRECISION")
+            await conn.execute("ALTER TABLE bot_settings ADD COLUMN IF NOT EXISTS history_limit INTEGER NOT NULL DEFAULT 10")
             await conn.execute(
                 "INSERT INTO bot_settings (id, system_prompt) VALUES (1, $1) ON CONFLICT (id) DO NOTHING",
                 DEFAULT_SYSTEM_PROMPT,
             )
+            for column, default_value in MESSAGE_COLUMNS.items():
+                await conn.execute(f"ALTER TABLE bot_settings ADD COLUMN IF NOT EXISTS {column} TEXT")
+                await conn.execute(
+                    f"UPDATE bot_settings SET {column} = $1 WHERE id = 1 AND {column} IS NULL",
+                    default_value,
+                )
         logger.info("Postgres pool ready")
     except Exception:
         logger.exception("Could not connect to Postgres - admin panel and qvai bot will be unavailable.")
@@ -135,6 +238,24 @@ async def log_message(
             first_name,
             role,
             content,
+        )
+
+
+async def get_chat_mode(chat_id: int) -> str:
+    async with _pool.acquire() as conn:
+        mode = await conn.fetchval("SELECT mode FROM chat_state WHERE chat_id = $1", chat_id)
+        return mode or "normal"
+
+
+async def set_chat_mode(chat_id: int, mode: str) -> None:
+    async with _pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO chat_state (chat_id, mode, updated_at) VALUES ($1, $2, now())
+            ON CONFLICT (chat_id) DO UPDATE SET mode = $2, updated_at = now()
+            """,
+            chat_id,
+            mode,
         )
 
 
