@@ -2,11 +2,11 @@
 
 [🇪🇸 Español](README.md) · [🇬🇧 English](#)
 
-Free JSON API for the informal (street) and official bank rates of **all 9 currencies elTOQUE publishes** (USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF), scraped from [elTOQUE](https://eltoque.com/tasas-de-cambio-cuba) via [Firecrawl](https://www.firecrawl.dev) (needed because the site sits behind a Cloudflare challenge that a plain `curl`/`requests` can't pass).
+Free JSON API for the informal (street) and official bank rates of **all 16 currencies elTOQUE publishes** (USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF, DKK, JPY, NOK, SEK, AUD, CNY, PAB), scraped from [elTOQUE](https://eltoque.com/tasas-de-cambio-cuba) via [Firecrawl](https://www.firecrawl.dev) (needed because the site sits behind a Cloudflare challenge that a plain `curl`/`requests` can't pass).
 
 **🔴 Live API:** **[cubausdrateapi.5-l.cc](https://cubausdrateapi.5-l.cc)**
 
-Live demo landing page — Spanish by default (with an English toggle), light/dark theme (dark is true black), mobile-responsive, shows the current rate with a count-up animation and a table of all 9 currencies, and includes copy-pasteable code snippets.
+Live demo landing page — Spanish by default (with an English toggle), light/dark theme (dark is true black), mobile-responsive, shows the current rate with a count-up animation and a table of all 16 currencies, and includes copy-pasteable code snippets.
 
 It's also an **[MCP](https://modelcontextprotocol.io) server** (`/mcp/`), so agents like Claude can query rates as tools instead of raw HTTP — see [Connect via MCP](#connect-via-mcp) below.
 
@@ -17,12 +17,12 @@ It's also an **[MCP](https://modelcontextprotocol.io) server** (`/mcp/`), so age
 - A background scheduler scrapes elTOQUE's pages through Firecrawl (the 7 currency pages that carry an informal rate + the shared `mercado-formal` page with every bank table), **sequentially**, every `SCRAPE_INTERVAL_MINUTES` (480 = 8h by default), and caches the parsed result to `data/cache.json`. It's sequential rather than parallel because Firecrawl returns 429 (rate limited) if you fire several scrapes at once; each call retries automatically with backoff when that happens.
 - API requests **never** trigger a live scrape — they just read the cache, so responses are instant and don't burn Firecrawl credits.
 - Every response includes `requested_at`, computed at the exact moment the request hits the server — **not** the time the data was scraped (that's `data.scraped_at` / `generated_at`).
-- Not every currency has both markets: MLC, ZELLE (Zelle balance) and CLA (classic card balance) only trade informally (no bank counter for them); GBP and CHF only have an official bank rate (elTOQUE doesn't track a street rate for those).
+- Not every currency has both markets: MLC, ZELLE (Zelle balance) and CLA (classic card balance) only trade informally (no bank counter for them); GBP, CHF, DKK, JPY, NOK, SEK, AUD, CNY, PAB only have an official bank rate (some, like AUD, CNY and PAB, are only quoted by BANDEC) (elTOQUE doesn't track a street rate for those).
 - If a page fails or elTOQUE serves its maintenance page, that part (informal or formal) keeps its last-known-good value instead of turning into `null`.
 
 ### Firecrawl credits math
 
-Firecrawl's free tier gives **1000 credits/month**, and a plain `/v2/scrape` call costs **1 credit**. Each refresh cycle scrapes **8 pages** (7 currency pages + 1 formal-market page) to cover all 9 currencies, so it costs 8 credits per cycle.
+Firecrawl's free tier gives **1000 credits/month**, and a plain `/v2/scrape` call costs **1 credit**. Each refresh cycle scrapes **8 pages** (7 currency pages + 1 formal-market page) to cover all 16 currencies, so it costs 8 credits per cycle.
 
 | Interval | Scrapes/day | Credits/month | Fits in 1000? |
 | --- | --- | --- | --- |
@@ -58,7 +58,7 @@ curl http://localhost:8000/api/v2/rates
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/api/v2/rates` | All 9 currencies, in elTOQUE's own order |
+| `GET` | `/api/v2/rates` | All 16 currencies, in elTOQUE's own order |
 | `GET` | `/api/v2/rates/{code}` | A single currency by code (`USD`, `EUR`, `MLC`, `CAD`, `MXN`, `ZELLE`, `CLA`, `GBP`, `CHF`) |
 | `GET` | `/api/v1/dolar` | USD only, in the original response shape (kept for backward compatibility) |
 | `GET` | `/api/v1/health` | Service status and last successful scrape time |
@@ -124,7 +124,7 @@ This is a real response, captured live from the running API:
 }
 ```
 
-`informal` is `null` for currencies with no informal market (GBP, CHF); `formal` is `null` for currencies with no bank counter (MLC, ZELLE, CLA).
+`informal` is `null` for currencies with no informal market (GBP, CHF, DKK, JPY, NOK, SEK, AUD, CNY, PAB); `formal` is `null` for currencies with no bank counter (MLC, ZELLE, CLA).
 
 `/api/v1/dolar` keeps the original response shape (`informal.usd_to_cup`, `usd_to_mlc`, `usd_to_eur`) so existing consumers don't break — it reads from the same shared cache internally rather than triggering a separate scrape.
 
@@ -160,7 +160,7 @@ Environment variables (see `.env.example`):
 | Variable | Default | Description |
 | --- | --- | --- |
 | `FIRECRAWL_API_KEY` | — (required) | Your Firecrawl API key. Get one free at firecrawl.dev. |
-| `SCRAPE_INTERVAL_MINUTES` | `480` | Minutes between scrapes (8 pages covering all 9 currencies). See credits math above. |
+| `SCRAPE_INTERVAL_MINUTES` | `480` | Minutes between scrapes (8 pages covering all 16 currencies). See credits math above. |
 | `PORT` | `8000` | Host port exposed by docker compose. |
 | `ADMIN_PASSWORD` | — (required) | Password to log into `/admin`. |
 | `SESSION_SECRET` | — (required) | Secret used to sign the admin panel's session cookie. Generate with `python -c "import secrets; print(secrets.token_hex(32))"`. |
@@ -175,7 +175,7 @@ qvai's **Telegram token** and **NVIDIA API key** do *not* go in `.env` — they'
 ```
 app/
   main.py          # FastAPI app, v1/v2 endpoints, scheduler, wiring
-  currencies.py      # registry of the 9 currencies, in elTOQUE's order
+  currencies.py      # registry of the 16 currencies, in elTOQUE's order
   scraper.py          # Firecrawl call + markdown -> structured JSON parsing
   cache.py            # thread-safe JSON cache (memory + disk)
   mcp_server.py        # MCP server (same tools/data as the API, same cache)

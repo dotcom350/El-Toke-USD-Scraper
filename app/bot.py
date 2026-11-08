@@ -21,6 +21,7 @@ from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from app import db
+from app.currencies import primary_bank_rate
 
 logger = logging.getLogger("qvai-bot")
 
@@ -52,11 +53,10 @@ def format_rates_summary(rates: Optional[list]) -> str:
         informal = r.get("informal")
         if informal:
             bits.append(f"{informal['cup']} CUP (informal)")
-        formal = r.get("formal")
-        if formal:
-            cadeca = formal.get("CADECA Casas de cambio")
-            if cadeca:
-                bits.append(f"banco {cadeca['compra']}/{cadeca['venta']} CUP")
+        bank = primary_bank_rate(r.get("formal"))
+        if bank:
+            bank_label, rate = bank
+            bits.append(f"banco ({bank_label}) {rate['compra']}/{rate['venta']} CUP")
         lines.append(" - ".join(bits))
     return "\n".join(lines)
 

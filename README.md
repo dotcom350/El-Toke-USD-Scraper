@@ -2,11 +2,11 @@
 
 [🇪🇸 Español](#) · [🇬🇧 English](README.en.md)
 
-API JSON gratuita para la tasa informal (calle) y las tasas oficiales de bancos de **las 9 monedas que publica elTOQUE** (USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF), scrapeadas desde [elTOQUE](https://eltoque.com/tasas-de-cambio-cuba) usando [Firecrawl](https://www.firecrawl.dev) (necesario porque el sitio está detrás de un challenge de Cloudflare que un `curl`/`requests` normal no puede pasar).
+API JSON gratuita para la tasa informal (calle) y las tasas oficiales de bancos de **las 16 monedas que publica elTOQUE** (USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF, DKK, JPY, NOK, SEK, AUD, CNY, PAB), scrapeadas desde [elTOQUE](https://eltoque.com/tasas-de-cambio-cuba) usando [Firecrawl](https://www.firecrawl.dev) (necesario porque el sitio está detrás de un challenge de Cloudflare que un `curl`/`requests` normal no puede pasar).
 
 **🔴 API en vivo:** **[cubausdrateapi.5-l.cc](https://cubausdrateapi.5-l.cc)**
 
-Landing page en vivo — español por defecto (con toggle a inglés), modo claro/oscuro (oscuro es negro puro), responsive para móviles, muestra la tasa actual con animación de conteo y una tabla con las 9 monedas, e incluye ejemplos de código listos para copiar.
+Landing page en vivo — español por defecto (con toggle a inglés), modo claro/oscuro (oscuro es negro puro), responsive para móviles, muestra la tasa actual con animación de conteo y una tabla con las 16 monedas, e incluye ejemplos de código listos para copiar.
 
 También es un **servidor [MCP](https://modelcontextprotocol.io)** (`/mcp/`), así que agentes como Claude pueden consultar las tasas como *tools* en vez de HTTP crudo — ver la sección [Conectar vía MCP](#conectar-vía-mcp) abajo.
 
@@ -17,12 +17,12 @@ También es un **servidor [MCP](https://modelcontextprotocol.io)** (`/mcp/`), as
 - Un scheduler en segundo plano scrapea, **secuencialmente**, las páginas de elTOQUE vía Firecrawl (las 7 páginas de moneda con tasa informal + la página compartida de `mercado-formal` con las tablas de bancos) cada `SCRAPE_INTERVAL_MINUTES` (480 = 8h por defecto) y cachea el resultado parseado en `data/cache.json`. Es secuencial (no en paralelo) porque Firecrawl devuelve 429 (rate limit) si le mandas varios scrapes a la vez; cada llamada reintenta automáticamente con backoff si eso pasa.
 - Las solicitudes a la API **nunca** disparan un scrape en vivo — solo leen el caché, así que las respuestas son instantáneas y no gastan créditos de Firecrawl.
 - Cada respuesta incluye `requested_at`, calculado en el instante exacto en que la solicitud llega al servidor — **no** la hora en que se scrapeó la data (eso es `data.scraped_at` / `generated_at`).
-- No todas las monedas tienen ambos mercados: MLC, ZELLE (saldo Zelle) y CLA (saldo tarjeta clásica) solo se cambian de forma informal (no hay mostrador de banco); GBP y CHF solo tienen tasa oficial de banco (elTOQUE no les sigue la pista en el mercado informal).
+- No todas las monedas tienen ambos mercados: MLC, ZELLE (saldo Zelle) y CLA (saldo tarjeta clásica) solo se cambian de forma informal (no hay mostrador de banco); GBP, CHF, DKK, JPY, NOK, SEK, AUD, CNY, PAB solo tienen tasa oficial de banco (algunas, como AUD, CNY y PAB, solo las cotiza BANDEC) (elTOQUE no les sigue la pista en el mercado informal).
 - Si una página falla o elTOQUE muestra su página de mantenimiento, esa parte (informal o formal) mantiene su último valor bueno en vez de quedar en `null`.
 
 ### Matemática de créditos de Firecrawl
 
-El tier gratuito de Firecrawl da **1000 créditos/mes**, y una llamada normal a `/v2/scrape` cuesta **1 crédito**. Cada ciclo de refresco scrapea **8 páginas** (7 de moneda + 1 de mercado formal) para cubrir las 9 monedas, así que el costo es 8 créditos por ciclo.
+El tier gratuito de Firecrawl da **1000 créditos/mes**, y una llamada normal a `/v2/scrape` cuesta **1 crédito**. Cada ciclo de refresco scrapea **8 páginas** (7 de moneda + 1 de mercado formal) para cubrir las 16 monedas, así que el costo es 8 créditos por ciclo.
 
 | Intervalo | Scrapes/día | Créditos/mes | ¿Entra en 1000? |
 | --- | --- | --- | --- |
@@ -58,7 +58,7 @@ curl http://localhost:8000/api/v2/rates
 
 | Método | Ruta | Descripción |
 | --- | --- | --- |
-| `GET` | `/api/v2/rates` | Las 9 monedas, en el orden propio de elTOQUE |
+| `GET` | `/api/v2/rates` | Las 16 monedas, en el orden propio de elTOQUE |
 | `GET` | `/api/v2/rates/{code}` | Una sola moneda por código (`USD`, `EUR`, `MLC`, `CAD`, `MXN`, `ZELLE`, `CLA`, `GBP`, `CHF`) |
 | `GET` | `/api/v1/dolar` | Solo USD, con el formato original (mantenido por compatibilidad) |
 | `GET` | `/api/v1/health` | Estado del servicio y hora del último scrape exitoso |
@@ -124,7 +124,7 @@ Esta es una respuesta real, capturada en vivo de la API corriendo:
 }
 ```
 
-`informal` es `null` para monedas sin mercado informal (GBP, CHF); `formal` es `null` para monedas sin mostrador de banco (MLC, ZELLE, CLA).
+`informal` es `null` para monedas sin mercado informal (GBP, CHF, DKK, JPY, NOK, SEK, AUD, CNY, PAB); `formal` es `null` para monedas sin mostrador de banco (MLC, ZELLE, CLA).
 
 `/api/v1/dolar` mantiene el formato original (`informal.usd_to_cup`, `usd_to_mlc`, `usd_to_eur`) para no romper a quien ya lo esté usando — internamente lee del mismo caché compartido, no dispara un scrape aparte.
 
@@ -160,7 +160,7 @@ Variables de entorno (ver `.env.example`):
 | Variable | Por defecto | Descripción |
 | --- | --- | --- |
 | `FIRECRAWL_API_KEY` | — (requerida) | Tu API key de Firecrawl. Consigue una gratis en firecrawl.dev. |
-| `SCRAPE_INTERVAL_MINUTES` | `480` | Minutos entre scrapes (de las 9 monedas). Ver la matemática de créditos arriba. |
+| `SCRAPE_INTERVAL_MINUTES` | `480` | Minutos entre scrapes (8 páginas que cubren las 16 monedas). Ver la matemática de créditos arriba. |
 | `PORT` | `8000` | Puerto del host expuesto por docker compose. |
 | `ADMIN_PASSWORD` | — (requerida) | Contraseña para entrar a `/admin`. |
 | `SESSION_SECRET` | — (requerida) | Secreto para firmar la cookie de sesión del panel. Generar con `python -c "import secrets; print(secrets.token_hex(32))"`. |
@@ -175,7 +175,7 @@ El **token de Telegram** y la **API key de NVIDIA** de qvai *no* van en `.env` �
 ```
 app/
   main.py          # app FastAPI, endpoints v1/v2, scheduler, wiring
-  currencies.py      # registro de las 9 monedas, en el orden de elTOQUE
+  currencies.py      # registro de las 16 monedas, en el orden de elTOQUE
   scraper.py         # llamada a Firecrawl + parseo de markdown a JSON estructurado
   cache.py           # caché JSON thread-safe (memoria + disco)
   mcp_server.py       # servidor MCP (mismas tools que la API, mismo caché)

@@ -11,11 +11,13 @@ from mcp.server.transport_security import TransportSecuritySettings
 from app.currencies import CURRENCIES, CURRENCIES_BY_CODE
 
 INSTRUCTIONS = (
-    "Provides Cuba's currency exchange rates, scraped from elTOQUE. Covers 9 "
+    "Provides Cuba's currency exchange rates, scraped from elTOQUE. Covers 16 "
     "currencies: USD, EUR, MLC, CAD, MXN, ZELLE (Zelle balance), CLA (classic "
-    "card balance), GBP and CHF. Each currency has an 'informal' (street) rate, "
-    "an 'formal' (official bank) rate, or both - some currencies only trade "
-    "informally (MLC, ZELLE, CLA), others only have an official bank rate (GBP, CHF)."
+    "card balance), GBP, CHF, DKK, JPY, NOK, SEK, AUD, CNY and PAB. Each currency "
+    "has an 'informal' (street) rate, a 'formal' (official bank) rate, or both - "
+    "some currencies only trade informally (MLC, ZELLE, CLA), others only have an "
+    "official bank rate (GBP, CHF, DKK, JPY, NOK, SEK, AUD, CNY, PAB). Some "
+    "bank-only currencies are quoted by a single bank (e.g. only BANDEC)."
 )
 
 
@@ -46,7 +48,7 @@ def build_mcp_asgi_app(
     @server.tool()
     def get_all_rates() -> dict:
         """Get Cuba's current informal (street) and official bank exchange
-        rates for all 9 tracked currencies, in elTOQUE's own order. Cached -
+        rates for all 16 tracked currencies, in elTOQUE's own order. Cached -
         does not trigger a live scrape."""
         rates = fetch_all()
         if rates is None:
@@ -56,7 +58,8 @@ def build_mcp_asgi_app(
     @server.tool()
     def get_rate(code: str) -> dict:
         """Get the current exchange rate for a single currency by its code
-        (USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF). Cached - does not
+        (USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF, DKK, JPY,
+        NOK, SEK, AUD, CNY, PAB). Cached - does not
         trigger a live scrape."""
         code = code.strip().upper()
         if code not in CURRENCIES_BY_CODE:

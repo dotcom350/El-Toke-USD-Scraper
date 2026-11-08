@@ -8,7 +8,7 @@
 <title>Cuba USD Rate API</title>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="description" content="API gratuita con las tasas de cambio informales y oficiales de todas las monedas que sigue elTOQUE (USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF)." />
+<meta name="description" content="API gratuita con las tasas de cambio informales y oficiales de todas las monedas que sigue elTOQUE (USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF, DKK, JPY, NOK, SEK, AUD, CNY, PAB)." />
 <meta name="theme-color" id="theme-color-meta" content="#000000" />
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%2334d399'/%3E%3Ctext x='16' y='21.5' font-family='Arial,Helvetica,sans-serif' font-size='16' font-weight='700' text-anchor='middle' fill='%230a0e17'%3E%24%3C/text%3E%3C/svg%3E" />
 <link rel="stylesheet" href="/static/style.css?v={{ static_version }}" />
@@ -39,8 +39,8 @@
     <span data-i18n="es" class="lang-active">Las tasas de cambio de Cuba, como API.</span>
   </h1>
   <p class="lede">
-    <span data-i18n="en">A tiny, free JSON API that tracks the informal (street) and official bank rates for every currency elTOQUE publishes &mdash; USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP and CHF &mdash; refreshed automatically so you never have to scrape it yourself.</span>
-    <span data-i18n="es" class="lang-active">Una API JSON pequeña y gratuita que sigue la tasa informal (calle) y las tasas oficiales de bancos de todas las monedas que publica elTOQUE &mdash; USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP y CHF &mdash; actualizada automáticamente para que no tengas que scrapear nada tú mismo.</span>
+    <span data-i18n="en">A tiny, free JSON API that tracks the informal (street) and official bank rates for every currency elTOQUE publishes &mdash; USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF, DKK, JPY, NOK, SEK, AUD, CNY and PAB &mdash; refreshed automatically so you never have to scrape it yourself.</span>
+    <span data-i18n="es" class="lang-active">Una API JSON pequeña y gratuita que sigue la tasa informal (calle) y las tasas oficiales de bancos de todas las monedas que publica elTOQUE &mdash; USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF, DKK, JPY, NOK, SEK, AUD, CNY y PAB &mdash; actualizada automáticamente para que no tengas que scrapear nada tú mismo.</span>
   </p>
 
   <div class="hero-grid">
@@ -124,7 +124,7 @@ console.log(data.informal.usd_to_cup);</code></pre>
           </tr>
           <tr>
             <td><span class="method">GET</span><code>/api/v2/rates</code></td>
-            <td><span data-i18n="en">All 9 currencies elTOQUE tracks, in their own order.</span><span data-i18n="es" class="lang-active">Las 9 monedas que sigue elTOQUE, en su propio orden.</span></td>
+            <td><span data-i18n="en">All 16 currencies elTOQUE tracks, in their own order.</span><span data-i18n="es" class="lang-active">Las 16 monedas que sigue elTOQUE, en su propio orden.</span></td>
           </tr>
           <tr>
             <td><span class="method">GET</span><code>/api/v2/rates/{code}</code></td>
@@ -170,8 +170,8 @@ claude mcp add --transport http cuba-rates {{ request.base_url }}mcp/</code></pr
   <section>
     <h2 data-i18n="en">All currencies (v2)</h2>
     <h2 data-i18n="es" class="lang-active">Todas las monedas (v2)</h2>
-    <p class="section-sub" data-i18n="en">Every currency elTOQUE prices, in elTOQUE's own order. Some only trade informally (MLC, ZELLE, CLA); some only have an official bank rate (GBP, CHF).</p>
-    <p class="section-sub lang-active" data-i18n="es">Todas las monedas que precia elTOQUE, en el orden propio de elTOQUE. Algunas solo se cambian de forma informal (MLC, ZELLE, CLA); otras solo tienen tasa bancaria oficial (GBP, CHF).</p>
+    <p class="section-sub" data-i18n="en">Every currency elTOQUE prices, in elTOQUE's own order. Some only trade informally (MLC, ZELLE, CLA); some only have an official bank rate (GBP, CHF, DKK, JPY, NOK, SEK, AUD, CNY, PAB).</p>
+    <p class="section-sub lang-active" data-i18n="es">Todas las monedas que precia elTOQUE, en el orden propio de elTOQUE. Algunas solo se cambian de forma informal (MLC, ZELLE, CLA); otras solo tienen tasa bancaria oficial (GBP, CHF, DKK, JPY, NOK, SEK, AUD, CNY, PAB).</p>
 
     <pre class="code"><code><span class="c1"># GET all currencies</span>
 curl {{ request.base_url }}api/v2/rates
@@ -186,7 +186,7 @@ curl {{ request.base_url }}api/v2/rates/EUR</code></pre>
             <th id="th-code">Code</th>
             <th id="th-currency">Currency</th>
             <th id="th-informal">Informal (1 = CUP)</th>
-            <th id="th-formal">Formal (CADECA)</th>
+            <th id="th-formal">Formal (bank)</th>
           </tr>
         </thead>
         <tbody id="rates-body">
@@ -331,8 +331,8 @@ docker compose up -d --build</code></pre>
   }
 
   const RATES_HEADERS = {
-    en: { "th-code": "Code", "th-currency": "Currency", "th-informal": "Informal (1 = CUP)", "th-formal": "Formal (CADECA)" },
-    es: { "th-code": "Código", "th-currency": "Moneda", "th-informal": "Informal (1 = CUP)", "th-formal": "Formal (CADECA)" },
+    en: { "th-code": "Code", "th-currency": "Currency", "th-informal": "Informal (1 = CUP)", "th-formal": "Formal (bank)" },
+    es: { "th-code": "Código", "th-currency": "Moneda", "th-informal": "Informal (1 = CUP)", "th-formal": "Formal (banco)" },
   };
 
   // flagsapi.com doesn't have a EUR/EU flag (only real ISO country codes),
@@ -340,6 +340,7 @@ docker compose up -d --build</code></pre>
   const FLAG_COUNTRY = {
     USD: "US", EUR: "EU", MLC: "CU", CAD: "CA", MXN: "MX",
     ZELLE: "US", CLA: "CU", GBP: "GB", CHF: "CH",
+    DKK: "DK", JPY: "JP", NOK: "NO", SEK: "SE", AUD: "AU", CNY: "CN", PAB: "PA",
   };
   const EU_FLAG_SVG = '<svg class="flag" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">'
     + '<rect width="24" height="24" rx="4" fill="#039"/>'
@@ -371,8 +372,13 @@ docker compose up -d --build</code></pre>
       .map((r) => {
         const name = currentLang === "es" ? r.name_es : r.name_en;
         const informal = r.informal ? `${r.informal.cup} CUP` : "—";
-        const formal = r.formal && r.formal["CADECA Casas de cambio"]
-          ? `${r.formal["CADECA Casas de cambio"].compra} / ${r.formal["CADECA Casas de cambio"].venta}`
+        // CADECA when it quotes this currency; otherwise the first bank that
+        // does (several bank-only currencies are only quoted by BANDEC).
+        const banks = r.formal ? Object.keys(r.formal) : [];
+        const bank = banks.includes("CADECA Casas de cambio") ? "CADECA Casas de cambio" : banks[0];
+        const formal = bank
+          ? `${r.formal[bank].compra} / ${r.formal[bank].venta}`
+            + (bank === "CADECA Casas de cambio" ? "" : ` <small>(${bank})</small>`)
           : "—";
         return `<tr><td><code>${r.code}</code></td><td>${flagHtml(r.code)}${name}</td><td>${informal}</td><td>${formal}</td></tr>`;
       })
