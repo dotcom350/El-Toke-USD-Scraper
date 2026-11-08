@@ -1,5 +1,7 @@
 .env
 data/*.json
+data/history/*.json
+data/history/*.json.tmp
 __pycache__/
 *.pyc
 .venv/

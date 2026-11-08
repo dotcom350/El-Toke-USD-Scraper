@@ -32,8 +32,8 @@ CACHE_PATH = os.getenv("CACHE_PATH", "data/cache.json")
 HISTORY_DIR = os.getenv("HISTORY_DIR", "data/history")
 
 
-async def save_history_to_json(rows: list, generated_at: Optional[str] = None) -> None:
-    """Save history data to JSON files, one per currency."""
+async def save_history_to_json(rows: list) -> None:
+    """Persist real scrape points, with the same uniqueness key as Postgres."""
     Path(HISTORY_DIR).mkdir(parents=True, exist_ok=True)
     for code, recorded_at, informal_cup, formal_json in rows:
         filepath = Path(HISTORY_DIR) / f"{code}.json"
@@ -48,9 +48,12 @@ async def save_history_to_json(rows: list, generated_at: Optional[str] = None) -
                     existing = json.load(f)
             else:
                 existing = []
-            existing.append(entry)
-            with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(existing, f, ensure_ascii=False, indent=2)
+            by_time = {datetime.fromisoformat(point["recorded_at"]): point for point in existing}
+            by_time.setdefault(recorded_at, entry)
+            pending = filepath.with_suffix(".json.tmp")
+            with open(pending, "w", encoding="utf-8") as f:
+                json.dump([by_time[time] for time in sorted(by_time)], f, ensure_ascii=False, indent=2)
+            pending.replace(filepath)
         except Exception as e:
             logger.error(f"Could not save history for {code}: {e}")
 
@@ -75,7 +78,8 @@ async def load_history_from_json(code: str, since=None, limit: int = 10000) -> l
                 "formal": entry["formal"],
             })
         
-        return sorted(points, key=lambda x: x["recorded_at"], reverse=True)[-limit:][::-1]
+        by_time = {datetime.fromisoformat(point["recorded_at"]): point for point in points}
+        return [by_time[time] for time in sorted(by_time)[-limit:]]
     except Exception as e:
         logger.error(f"Could not load history for {code}: {e}")
         return []
@@ -134,14 +138,14 @@ async def record_history_snapshot(snapshot: dict | None) -> None:
             added = await db.record_history(rows)
             if added:
                 logger.info("Recorded %d new history points in database", added)
-            return
         except Exception:  # noqa: BLE001
             logger.exception("Could not record rate history in database, trying JSON fallback")
     
-    # Fallback: save to JSON file
+    # Keep a disk copy even while Postgres is healthy, so a temporary database
+    # outage can still serve the same history.
     try:
-        await save_history_to_json(rows, snapshot.get("generated_at"))
-        logger.info("Recorded %d new history points in JSON file", len(rows))
+        await save_history_to_json(rows)
+        logger.info("Persisted snapshot of %d history points to JSON files", len(rows))
     except Exception:  # noqa: BLE001
         logger.exception("Could not record rate history at all")
 
@@ -306,26 +310,24 @@ async def get_history(code: str, days: Optional[int] = Query(None, ge=1, le=3650
     
     since = datetime.now(timezone.utc) - timedelta(days=days) if days else None
     
-    # Try database first
-    points = []
+    # Merge disk history with Postgres: points collected during an outage
+    # must remain visible after the database comes back.
+    points = await load_history_from_json(code, since=since)
     if db.pool_ready():
         try:
             rows = await db.get_history(code, since=since)
-            points = [
+            points.extend([
                 {
                     "recorded_at": r["recorded_at"].isoformat(),
                     "informal_cup": r["informal_cup"],
                     "formal": json.loads(r["formal"]) if r["formal"] else None,
                 }
                 for r in rows
-            ]
+            ])
         except Exception:
             logger.exception("Database history load failed, trying JSON fallback")
-            points = []
-    
-    # Fallback to JSON files
-    if not points:
-        points = await load_history_from_json(code, since=since)
+    by_time = {datetime.fromisoformat(point["recorded_at"]): point for point in points}
+    points = [by_time[time] for time in sorted(by_time)[-10000:]]
     
     return {
         "success": True,

@@ -60,7 +60,7 @@ curl http://localhost:8000/api/v2/rates
 | --- | --- | --- |
 | `GET` | `/api/v2/rates` | All 16 currencies, in elTOQUE's own order |
 | `GET` | `/api/v2/rates/{code}` | A single currency by code (`USD`, `EUR`, `MLC`, `CAD`, `MXN`, `ZELLE`, `CLA`, `GBP`, `CHF`, `DKK`, `JPY`, `NOK`, `SEK`, `AUD`, `CNY`, `PAB`) |
-| `GET` | `/api/v2/history/{code}` | One currency's history: one point per scrape (`informal_cup` + the `formal` bank table), oldest first. Optional `?days=N`. Needs Postgres; the landing page renders it as a candlestick/line chart |
+| `GET` | `/api/v2/history/{code}` | Real history for one currency: one point per scrape (`informal_cup` + the `formal` bank table), oldest first. Optional `?days=N`. Stored in Postgres and `data/history/`; also works without Postgres. The landing page renders a line chart, including a single point |
 | `GET` | `/api/v1/dolar` | USD only, in the original response shape (kept for backward compatibility) |
 | `GET` | `/api/v1/health` | Service status and last successful scrape time |
 | `ANY` | `/mcp/` | MCP server (Streamable HTTP) - see below |

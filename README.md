@@ -60,12 +60,24 @@ curl http://localhost:8000/api/v2/rates
 | --- | --- | --- |
 | `GET` | `/api/v2/rates` | Las 16 monedas, en el orden propio de elTOQUE |
 | `GET` | `/api/v2/rates/{code}` | Una sola moneda por código (`USD`, `EUR`, `MLC`, `CAD`, `MXN`, `ZELLE`, `CLA`, `GBP`, `CHF`, `DKK`, `JPY`, `NOK`, `SEK`, `AUD`, `CNY`, `PAB`) |
-| `GET` | `/api/v2/history/{code}` | Histórico de una moneda: un punto por scrape (`informal_cup` + tabla `formal` de bancos), del más viejo al más nuevo. Opcional `?days=N`. Requiere Postgres; la landing lo muestra como gráfica de velas/línea |
+| `GET` | `/api/v2/history/{code}` | Histórico real de una moneda: un punto por scrape (`informal_cup` + tabla `formal` de bancos), del más viejo al más nuevo. Opcional `?days=N`. Se guarda en Postgres y en `data/history/`; funciona también sin Postgres. La landing muestra una gráfica de línea, incluso con un único punto |
 | `GET` | `/api/v1/dolar` | Solo USD, con el formato original (mantenido por compatibilidad) |
 | `GET` | `/api/v1/health` | Estado del servicio y hora del último scrape exitoso |
 | `ANY` | `/mcp/` | Servidor MCP (Streamable HTTP) — ver abajo |
 | `GET` | `/docs` | Documentación interactiva Swagger / OpenAPI |
 | `GET` | `/` | Landing page bilingüe |
+
+El histórico empieza con el último dato real del caché y crece con cada scrape. No se incluyen datos históricos simulados. Los archivos de `data/history/` son datos de ejecución y se conservan en el volumen `./data` de Docker Compose.
+
+## Pruebas
+
+```bash
+pip install -r requirements-dev.txt
+python -m playwright install chromium
+python -m unittest discover -s tests -v
+```
+
+Las pruebas de API e interfaz usan datos aislados; no ejecutan scrapes ni arrancan el bot. Comprueban precios, gráfica, idioma, tema, mercados, tamaño móvil y persistencia del histórico.
 
 ## Conectar vía MCP
 
