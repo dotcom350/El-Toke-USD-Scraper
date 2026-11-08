@@ -59,7 +59,8 @@ curl http://localhost:8000/api/v2/rates
 | Método | Ruta | Descripción |
 | --- | --- | --- |
 | `GET` | `/api/v2/rates` | Las 16 monedas, en el orden propio de elTOQUE |
-| `GET` | `/api/v2/rates/{code}` | Una sola moneda por código (`USD`, `EUR`, `MLC`, `CAD`, `MXN`, `ZELLE`, `CLA`, `GBP`, `CHF`) |
+| `GET` | `/api/v2/rates/{code}` | Una sola moneda por código (`USD`, `EUR`, `MLC`, `CAD`, `MXN`, `ZELLE`, `CLA`, `GBP`, `CHF`, `DKK`, `JPY`, `NOK`, `SEK`, `AUD`, `CNY`, `PAB`) |
+| `GET` | `/api/v2/history/{code}` | Histórico de una moneda: un punto por scrape (`informal_cup` + tabla `formal` de bancos), del más viejo al más nuevo. Opcional `?days=N`. Requiere Postgres; la landing lo muestra como gráfica de velas/línea |
 | `GET` | `/api/v1/dolar` | Solo USD, con el formato original (mantenido por compatibilidad) |
 | `GET` | `/api/v1/health` | Estado del servicio y hora del último scrape exitoso |
 | `ANY` | `/mcp/` | Servidor MCP (Streamable HTTP) — ver abajo |

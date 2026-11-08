@@ -1,11 +1,13 @@
+import json
 import logging
 import os
 import secrets
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -55,6 +57,33 @@ bot_manager = BotManager(get_rates=_get_all_currencies)
 admin_router = build_admin_router(bot_manager)
 
 
+async def record_history_snapshot(snapshot: dict | None) -> None:
+    """Append every cached entry to rate_history. Entries carried over
+    unchanged from an earlier cycle keep their original scraped_at, so the
+    (code, recorded_at) unique key makes re-recording them a no-op - only
+    freshly scraped values add new points."""
+    if not snapshot or not db.pool_ready():
+        return
+    rows = []
+    for code, entry in (snapshot.get("currencies") or {}).items():
+        informal = (entry.get("informal") or {}).get("cup")
+        formal = entry.get("formal")
+        if (informal is None and not formal) or not entry.get("scraped_at"):
+            continue
+        rows.append((
+            code,
+            datetime.fromisoformat(entry["scraped_at"]),
+            informal,
+            json.dumps(formal) if formal else None,
+        ))
+    try:
+        added = await db.record_history(rows)
+        if added:
+            logger.info("Recorded %d new history points", added)
+    except Exception:  # noqa: BLE001 - history is best-effort, never break the scrape
+        logger.exception("Could not record rate history")
+
+
 async def refresh_job() -> None:
     try:
         # Pass the existing cache in so any part (informal/formal) that fails
@@ -63,6 +92,7 @@ async def refresh_job() -> None:
         existing = cache.get() or {}
         data = await scrape_all(FIRECRAWL_API_KEY, previous=existing.get("currencies"))
         cache.set(data)
+        await record_history_snapshot(data)
         ok_count = len(data["currencies"])
         logger.info(
             "Scrape refreshed at %s (%d/%d currencies ok)",
@@ -80,6 +110,10 @@ async def refresh_job() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cache.load()
+    # DB first, so the startup scrape (and the cache already on disk) can be
+    # recorded into the rate history.
+    await db.init_pool()
+    await record_history_snapshot(cache.get())
     if not FIRECRAWL_API_KEY:
         logger.warning("FIRECRAWL_API_KEY is not set - the scraper will not run.")
     else:
@@ -87,7 +121,6 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(refresh_job, "interval", minutes=INTERVAL_MINUTES, id="refresh")
         scheduler.start()
 
-    await db.init_pool()
     if db.pool_ready():
         settings = await db.get_settings()
         if settings.get("enabled") and settings.get("telegram_token"):
@@ -196,6 +229,36 @@ async def get_rate(code: str):
         "requested_at": requested_at,
         "interval_minutes": INTERVAL_MINUTES,
         "data": entry,
+    }
+
+
+@app.get("/api/v2/history/{code}")
+async def get_history(code: str, days: Optional[int] = Query(None, ge=1, le=3650)):
+    """Every recorded data point for one currency, oldest first: the
+    informal CUP rate and the full bank table as of each scrape. `days`
+    limits it to the last N days (default: everything)."""
+    requested_at = datetime.now(timezone.utc).isoformat()
+    code = code.upper()
+    if code not in CURRENCIES_BY_CODE:
+        raise HTTPException(status_code=404, detail=f"Unknown currency code: {code}")
+    if not db.pool_ready():
+        raise HTTPException(status_code=503, detail="History is unavailable (no database configured).")
+    since = datetime.now(timezone.utc) - timedelta(days=days) if days else None
+    rows = await db.get_history(code, since=since)
+    points = [
+        {
+            "recorded_at": r["recorded_at"].isoformat(),
+            "informal_cup": r["informal_cup"],
+            "formal": json.loads(r["formal"]) if r["formal"] else None,
+        }
+        for r in rows
+    ]
+    return {
+        "success": True,
+        "requested_at": requested_at,
+        "interval_minutes": INTERVAL_MINUTES,
+        "code": code,
+        "points": points,
     }
 
 

@@ -137,6 +137,18 @@ CREATE TABLE IF NOT EXISTS chat_state (
     mode TEXT NOT NULL DEFAULT 'normal',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- One row per currency per successful scrape, for the landing's history
+-- charts. recorded_at is the entry's own scraped_at, so re-recording an
+-- entry carried over unchanged from a previous cycle is a no-op.
+CREATE TABLE IF NOT EXISTS rate_history (
+    id BIGSERIAL PRIMARY KEY,
+    code TEXT NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL,
+    informal_cup DOUBLE PRECISION,
+    formal JSON,
+    UNIQUE (code, recorded_at)
+);
 """
 
 # Added after the initial release - kept as ALTER TABLE ... ADD COLUMN IF NOT
@@ -312,3 +324,45 @@ async def stats() -> dict:
             "SELECT COUNT(*) AS total_messages, COUNT(DISTINCT chat_id) AS total_chats FROM conversations"
         )
         return dict(row)
+
+
+async def record_history(rows: list[tuple]) -> int:
+    """rows: (code, recorded_at: datetime, informal_cup: float | None,
+    formal_json: str | None). Duplicates (same code + recorded_at) are
+    skipped. Returns how many rows were new."""
+    if not rows:
+        return 0
+    async with _pool.acquire() as conn:
+        before = await conn.fetchval("SELECT COUNT(*) FROM rate_history")
+        await conn.executemany(
+            """
+            INSERT INTO rate_history (code, recorded_at, informal_cup, formal)
+            VALUES ($1, $2, $3, $4::json)
+            ON CONFLICT (code, recorded_at) DO NOTHING
+            """,
+            rows,
+        )
+        after = await conn.fetchval("SELECT COUNT(*) FROM rate_history")
+        return after - before
+
+
+async def get_history(code: str, since=None, limit: int = 10000) -> list[dict]:
+    """Oldest-first history for one currency, optionally only rows after
+    `since` (a datetime). Capped at the newest `limit` rows."""
+    async with _pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT recorded_at, informal_cup, formal FROM (
+                SELECT recorded_at, informal_cup, formal
+                FROM rate_history
+                WHERE code = $1 AND ($2::timestamptz IS NULL OR recorded_at >= $2)
+                ORDER BY recorded_at DESC
+                LIMIT $3
+            ) newest
+            ORDER BY recorded_at ASC
+            """,
+            code,
+            since,
+            limit,
+        )
+        return [dict(r) for r in rows]

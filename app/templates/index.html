@@ -128,7 +128,11 @@ console.log(data.informal.usd_to_cup);</code></pre>
           </tr>
           <tr>
             <td><span class="method">GET</span><code>/api/v2/rates/{code}</code></td>
-            <td><span data-i18n="en">A single currency by code (USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF).</span><span data-i18n="es" class="lang-active">Una sola moneda por código (USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF).</span></td>
+            <td><span data-i18n="en">A single currency by code (USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF, DKK, JPY, NOK, SEK, AUD, CNY, PAB).</span><span data-i18n="es" class="lang-active">Una sola moneda por código (USD, EUR, MLC, CAD, MXN, ZELLE, CLA, GBP, CHF, DKK, JPY, NOK, SEK, AUD, CNY, PAB).</span></td>
+          </tr>
+          <tr>
+            <td><span class="method">GET</span><code>/api/v2/history/{code}</code></td>
+            <td><span data-i18n="en">Every recorded data point for one currency (informal rate + bank table per scrape). Optional <code>?days=N</code>.</span><span data-i18n="es" class="lang-active">Todos los puntos guardados de una moneda (tasa informal + tabla de bancos por scrape). Opcional <code>?days=N</code>.</span></td>
           </tr>
           <tr>
             <td><span class="method">GET</span><code>/api/v1/health</code></td>
@@ -196,6 +200,49 @@ curl {{ request.base_url }}api/v2/rates/EUR</code></pre>
     </div>
   </section>
 
+  <section id="historico">
+    <h2 data-i18n="en">History</h2>
+    <h2 data-i18n="es" class="lang-active">Histórico</h2>
+    <p class="section-sub" data-i18n="en">Every scrape is saved, so the chart grows over time. Daily candles (open / high / low / close of each day's readings) or the raw line. Data via <code>GET /api/v2/history/{code}</code>.</p>
+    <p class="section-sub lang-active" data-i18n="es">Cada scrape se guarda, así que la gráfica crece con el tiempo. Velas diarias (apertura / máximo / mínimo / cierre de las lecturas de cada día) o la línea cruda. Datos vía <code>GET /api/v2/history/{code}</code>.</p>
+
+    <div class="card chart-card">
+      <div class="chart-toolbar">
+        <select id="hist-currency" aria-label="Currency"></select>
+        <div class="seg" id="hist-market">
+          <button data-value="informal" class="active"><span data-i18n="en">Informal</span><span data-i18n="es" class="lang-active">Informal</span></button>
+          <button data-value="formal"><span data-i18n="en">Bank</span><span data-i18n="es" class="lang-active">Banco</span></button>
+        </div>
+        <select id="hist-bank" aria-label="Bank" hidden></select>
+        <div class="seg" id="hist-type">
+          <button data-value="candles" class="active"><span data-i18n="en">Candles</span><span data-i18n="es" class="lang-active">Velas</span></button>
+          <button data-value="line"><span data-i18n="en">Line</span><span data-i18n="es" class="lang-active">Línea</span></button>
+        </div>
+        <div class="seg" id="hist-range">
+          <button data-value="7">7D</button>
+          <button data-value="30">1M</button>
+          <button data-value="90">3M</button>
+          <button data-value="365"><span data-i18n="en">1Y</span><span data-i18n="es" class="lang-active">1A</span></button>
+          <button data-value="all" class="active"><span data-i18n="en">All</span><span data-i18n="es" class="lang-active">Todo</span></button>
+        </div>
+      </div>
+
+      <div class="chart-head">
+        <div class="chart-title" id="hist-title">&mdash;</div>
+        <div class="chart-quote">
+          <span class="chart-price" id="hist-price">&mdash;</span>
+          <span class="chart-change" id="hist-change"></span>
+        </div>
+        <div class="chart-meta" id="hist-meta"></div>
+      </div>
+
+      <div class="chart-box">
+        <div id="hist-chart"></div>
+        <div class="chart-empty" id="hist-empty" hidden></div>
+      </div>
+    </div>
+  </section>
+
   <section>
     <h2 data-i18n="en">Example response</h2>
     <h2 data-i18n="es" class="lang-active">Respuesta de ejemplo</h2>
@@ -240,6 +287,7 @@ docker compose up -d --build</code></pre>
   </footer>
 </div>
 
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <script>
   const LANG_KEY = "cuba-usd-api-lang";
   const THEME_KEY = "cuba-usd-api-theme";
@@ -293,6 +341,10 @@ docker compose up -d --build</code></pre>
     document.documentElement.setAttribute("lang", lang);
     localStorage.setItem(LANG_KEY, lang);
     renderRatesTable();
+    if (typeof hist !== "undefined") {
+      populateHistCurrencies();
+      renderHistChart();
+    }
   }
 
   function initLang() {
@@ -402,7 +454,250 @@ docker compose up -d --build</code></pre>
     }
   }
 
+  // ---- History chart (TradingView Lightweight Charts) ----
+  const HIST_TEXT = {
+    en: {
+      collecting: (n, h) => `Collecting history — ${n} point${n === 1 ? "" : "s"} so far. A new one is added every ${h} h, so the chart fills in over the coming days.`,
+      unavailable: "History isn't available right now.",
+      informal: "Informal", bank: "Bank · sell", high: "High", low: "Low", points: (n) => (n === 1 ? "point" : "points"),
+      noData: "No data for this market.",
+    },
+    es: {
+      collecting: (n, h) => `Recopilando histórico — ${n} punto${n === 1 ? "" : "s"} por ahora. Se agrega uno cada ${h} h, así que la gráfica se irá llenando en los próximos días.`,
+      unavailable: "El histórico no está disponible ahora mismo.",
+      informal: "Informal", bank: "Banco · venta", high: "Máx", low: "Mín", points: (n) => (n === 1 ? "punto" : "puntos"),
+      noData: "No hay datos para este mercado.",
+    },
+  };
+  const hist = {
+    code: "USD", market: "informal", bank: null, type: "candles", range: "all",
+    points: [], intervalMinutes: 480, error: false, loaded: false,
+    chart: null, series: null, hovered: null, seq: 0,
+  };
+
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function chartColors() {
+    return {
+      bg: cssVar("--card"), text: cssVar("--text-dim"), grid: cssVar("--border"),
+      up: "#16c784", down: "#ea3943", line: cssVar("--accent"),
+    };
+  }
+
+  function ensureChart() {
+    if (hist.chart || !window.LightweightCharts) return hist.chart;
+    const c = chartColors();
+    hist.chart = LightweightCharts.createChart(document.getElementById("hist-chart"), {
+      autoSize: true,
+      layout: { background: { type: "solid", color: c.bg }, textColor: c.text, fontFamily: cssVar("--sans") },
+      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+      rightPriceScale: { borderColor: c.grid },
+      timeScale: { borderColor: c.grid, timeVisible: true, secondsVisible: false },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+      handleScroll: { vertTouchDrag: false },
+    });
+    hist.chart.subscribeCrosshairMove((param) => {
+      hist.hovered = param && param.time && hist.series ? param.seriesData.get(hist.series) || null : null;
+      renderHistHead();
+    });
+    new MutationObserver(restyleChart).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return hist.chart;
+  }
+
+  function restyleChart() {
+    if (!hist.chart) return;
+    const c = chartColors();
+    hist.chart.applyOptions({
+      layout: { background: { type: "solid", color: c.bg }, textColor: c.text },
+      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+      rightPriceScale: { borderColor: c.grid },
+      timeScale: { borderColor: c.grid },
+    });
+    if (hist.series && hist.type === "line") {
+      hist.series.applyOptions({ lineColor: c.line, topColor: c.line + "55", bottomColor: c.line + "00" });
+    }
+  }
+
+  // Lightweight Charts renders timestamps as UTC; shifting each one by the
+  // viewer's UTC offset makes the axis read in their local time instead.
+  function localSeconds(ms) {
+    return Math.floor((ms - new Date(ms).getTimezoneOffset() * 60000) / 1000);
+  }
+
+  function bankList() {
+    const seen = new Set();
+    hist.points.forEach((p) => p.formal && Object.keys(p.formal).forEach((b) => seen.add(b)));
+    return [...seen];
+  }
+
+  // [{time, value}] for the current market/bank/range, ascending, unique times.
+  function seriesValues() {
+    const cutoff = hist.range === "all" ? -Infinity : Date.now() - Number(hist.range) * 86400000;
+    const out = [];
+    hist.points.forEach((p) => {
+      const ms = Date.parse(p.recorded_at);
+      if (ms < cutoff) return;
+      const value = hist.market === "informal"
+        ? p.informal_cup
+        : p.formal && p.formal[hist.bank] ? p.formal[hist.bank].venta : null;
+      if (value === null || value === undefined) return;
+      const time = localSeconds(ms);
+      if (out.length && out[out.length - 1].time >= time) out.pop();
+      out.push({ time, value });
+    });
+    return out;
+  }
+
+  function toDailyCandles(values) {
+    const days = new Map();
+    values.forEach(({ time, value }) => {
+      const day = time - (time % 86400);
+      const c = days.get(day);
+      if (!c) days.set(day, { time: day, open: value, high: value, low: value, close: value });
+      else { c.high = Math.max(c.high, value); c.low = Math.min(c.low, value); c.close = value; }
+    });
+    return [...days.values()];
+  }
+
+  function fmt(v) {
+    if (v === null || v === undefined || Number.isNaN(v)) return "—";
+    const decimals = Math.abs(v) < 10 ? 4 : 2;
+    return Number(v).toLocaleString(currentLang === "es" ? "es-ES" : "en-US", { minimumFractionDigits: 2, maximumFractionDigits: decimals });
+  }
+
+  function renderHistHead() {
+    const t = HIST_TEXT[currentLang] || HIST_TEXT.es;
+    const cur = latestRates.find((r) => r.code === hist.code);
+    const name = cur ? (currentLang === "es" ? cur.name_es : cur.name_en) : hist.code;
+    const marketLabel = hist.market === "informal" ? t.informal : `${t.bank} (${hist.bank || "—"})`;
+    document.getElementById("hist-title").innerHTML = `${flagHtml(hist.code)}<b>${hist.code}/CUP</b> <span>${name} · ${marketLabel}</span>`;
+
+    const values = seriesValues();
+    const priceEl = document.getElementById("hist-price");
+    const changeEl = document.getElementById("hist-change");
+    const metaEl = document.getElementById("hist-meta");
+    if (!values.length) {
+      priceEl.textContent = "—"; changeEl.textContent = ""; metaEl.textContent = "";
+      return;
+    }
+    const first = values[0].value;
+    const h = hist.hovered;
+    const shown = h ? (h.close !== undefined ? h.close : h.value) : values[values.length - 1].value;
+    const diff = shown - first;
+    const pct = first ? (diff / first) * 100 : 0;
+    priceEl.textContent = `${fmt(shown)} CUP`;
+    changeEl.textContent = `${diff >= 0 ? "+" : ""}${fmt(diff)} (${diff >= 0 ? "+" : ""}${pct.toFixed(2)}%)`;
+    changeEl.className = "chart-change " + (diff > 0 ? "up" : diff < 0 ? "down" : "");
+    const highs = values.map((v) => v.value);
+    metaEl.textContent = h && h.open !== undefined
+      ? `O ${fmt(h.open)} · H ${fmt(h.high)} · L ${fmt(h.low)} · C ${fmt(h.close)}`
+      : `${t.high} ${fmt(Math.max(...highs))} · ${t.low} ${fmt(Math.min(...highs))} · ${values.length} ${t.points(values.length)}`;
+  }
+
+  function renderHistChart() {
+    const t = HIST_TEXT[currentLang] || HIST_TEXT.es;
+    const chart = ensureChart();
+    const emptyEl = document.getElementById("hist-empty");
+    hist.hovered = null;
+
+    // Market toggle: disable whichever side this currency doesn't have.
+    const hasInformal = hist.points.some((p) => p.informal_cup !== null && p.informal_cup !== undefined);
+    const banks = bankList();
+    document.querySelectorAll("#hist-market button").forEach((b) => {
+      b.disabled = b.dataset.value === "informal" ? !hasInformal : !banks.length;
+    });
+    if (hist.market === "informal" && !hasInformal && banks.length) hist.market = "formal";
+    if (hist.market === "formal" && !banks.length && hasInformal) hist.market = "informal";
+    document.querySelectorAll("#hist-market button").forEach((b) => b.classList.toggle("active", b.dataset.value === hist.market));
+
+    const bankSel = document.getElementById("hist-bank");
+    bankSel.hidden = hist.market !== "formal" || !banks.length;
+    if (!banks.includes(hist.bank)) hist.bank = banks.includes("CADECA Casas de cambio") ? "CADECA Casas de cambio" : banks[0] || null;
+    bankSel.innerHTML = banks.map((b) => `<option value="${b}"${b === hist.bank ? " selected" : ""}>${b}</option>`).join("");
+
+    const values = seriesValues();
+    if (chart) {
+      if (hist.series) { chart.removeSeries(hist.series); hist.series = null; }
+      const c = chartColors();
+      const priceFormat = { type: "price", precision: values.some((v) => Math.abs(v.value) < 10) ? 4 : 2, minMove: 0.0001 };
+      if (hist.type === "candles") {
+        hist.series = chart.addCandlestickSeries({
+          upColor: c.up, downColor: c.down, wickUpColor: c.up, wickDownColor: c.down, borderVisible: false, priceFormat,
+        });
+        hist.series.setData(toDailyCandles(values));
+      } else {
+        hist.series = chart.addAreaSeries({
+          lineColor: c.line, topColor: c.line + "55", bottomColor: c.line + "00", lineWidth: 2, priceFormat,
+        });
+        hist.series.setData(values);
+      }
+      chart.timeScale().fitContent();
+    }
+
+    let msg = "";
+    if (!hist.loaded) msg = "…";
+    else if (hist.error || !chart) msg = t.unavailable;
+    else if (!hist.points.length) msg = t.collecting(0, Math.round(hist.intervalMinutes / 60));
+    else if (!values.length) msg = t.noData;
+    else if (values.length < 2) msg = t.collecting(values.length, Math.round(hist.intervalMinutes / 60));
+    emptyEl.hidden = !msg;
+    emptyEl.textContent = msg;
+    renderHistHead();
+  }
+
+  async function loadHistory() {
+    const seq = ++hist.seq;
+    try {
+      const res = await fetch(`/api/v2/history/${hist.code}`);
+      if (!res.ok) throw new Error("unavailable");
+      const payload = await res.json();
+      if (seq !== hist.seq) return; // a newer currency was picked meanwhile
+      hist.points = payload.points || [];
+      hist.intervalMinutes = payload.interval_minutes || 480;
+      hist.error = false;
+    } catch (err) {
+      if (seq !== hist.seq) return;
+      hist.points = [];
+      hist.error = true;
+    }
+    hist.loaded = true;
+    renderHistChart();
+  }
+
+  function populateHistCurrencies() {
+    const sel = document.getElementById("hist-currency");
+    const codes = latestRates.length ? latestRates.map((r) => r.code) : [hist.code];
+    sel.innerHTML = codes.map((code) => {
+      const r = latestRates.find((x) => x.code === code);
+      const name = r ? (currentLang === "es" ? r.name_es : r.name_en) : "";
+      return `<option value="${code}"${code === hist.code ? " selected" : ""}>${code}${name ? " · " + name : ""}</option>`;
+    }).join("");
+  }
+
+  document.getElementById("hist-currency").addEventListener("change", (e) => {
+    hist.code = e.target.value;
+    hist.market = "informal";
+    loadHistory();
+  });
+  document.getElementById("hist-bank").addEventListener("change", (e) => {
+    hist.bank = e.target.value;
+    renderHistChart();
+  });
+  [["hist-market", "market"], ["hist-type", "type"], ["hist-range", "range"]].forEach(([id, key]) => {
+    document.querySelectorAll(`#${id} button`).forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (btn.disabled) return;
+        hist[key] = btn.dataset.value;
+        document.querySelectorAll(`#${id} button`).forEach((b) => b.classList.toggle("active", b === btn));
+        renderHistChart();
+      });
+    });
+  });
+
   initLang();
   loadPrice();
-  loadAllRates();
+  loadAllRates().then(() => { populateHistCurrencies(); renderHistHead(); });
+  loadHistory();
 </script>
