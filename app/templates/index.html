@@ -203,8 +203,8 @@ curl {{ request.base_url }}api/v2/rates/EUR</code></pre>
   <section id="historico">
     <h2 data-i18n="en">History</h2>
     <h2 data-i18n="es" class="lang-active">Histórico</h2>
-    <p class="section-sub" data-i18n="en">Every scrape is saved, so the chart grows over time. Daily candles (open / high / low / close of each day's readings) or the raw line. Data via <code>GET /api/v2/history/{code}</code>.</p>
-    <p class="section-sub lang-active" data-i18n="es">Cada scrape se guarda, así que la gráfica crece con el tiempo. Velas diarias (apertura / máximo / mínimo / cierre de las lecturas de cada día) o la línea cruda. Datos vía <code>GET /api/v2/history/{code}</code>.</p>
+    <p class="section-sub" data-i18n="en">Every scrape is saved, so the chart grows over time. Data via <code>GET /api/v2/history/{code}</code>.</p>
+    <p class="section-sub lang-active" data-i18n="es">Cada scrape se guarda, así que la gráfica crece con el tiempo. Datos vía <code>GET /api/v2/history/{code}</code>.</p>
 
     <div class="card chart-card">
       <div class="chart-toolbar">
@@ -214,9 +214,8 @@ curl {{ request.base_url }}api/v2/rates/EUR</code></pre>
           <button data-value="formal"><span data-i18n="en">Bank</span><span data-i18n="es" class="lang-active">Banco</span></button>
         </div>
         <select id="hist-bank" aria-label="Bank" hidden></select>
-        <div class="seg" id="hist-type">
-          <button data-value="candles" class="active"><span data-i18n="en">Candles</span><span data-i18n="es" class="lang-active">Velas</span></button>
-          <button data-value="line"><span data-i18n="en">Line</span><span data-i18n="es" class="lang-active">Línea</span></button>
+        <div class="seg" id="hist-type" hidden>
+          <button data-value="line" class="active"><span data-i18n="en">Line</span><span data-i18n="es" class="lang-active">Línea</span></button>
         </div>
         <div class="seg" id="hist-range">
           <button data-value="7">7D</button>
@@ -287,7 +286,6 @@ docker compose up -d --build</code></pre>
   </footer>
 </div>
 
-<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <script>
   const LANG_KEY = "cuba-usd-api-lang";
   const THEME_KEY = "cuba-usd-api-theme";
@@ -469,67 +467,27 @@ docker compose up -d --build</code></pre>
       noData: "No hay datos para este mercado.",
     },
   };
+  // ========== CUSTOM CHART IMPLEMENTATION ==========
   const hist = {
-    code: "USD", market: "informal", bank: null, type: "candles", range: "all",
+    code: "USD", market: "informal", bank: null, type: "line", range: "all",
     points: [], intervalMinutes: 480, error: false, loaded: false,
-    chart: null, series: null, hovered: null, seq: 0,
+    canvas: null, ctx: null, data: [], hoveredIndex: null, seq: 0,
   };
 
   function cssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
 
-  function chartColors() {
+  function getChartColors() {
     return {
       bg: cssVar("--card"), 
-      text: cssVar("--text-dim"), 
+      text: cssVar("--text"), 
+      textDim: cssVar("--text-dim"), 
       grid: cssVar("--border"),
-      up: "#16c784", 
-      down: "#ea3943", 
       line: cssVar("--accent"),
-      areaUp: cssVar("--accent") + "33",
-      areaDown: cssVar("--accent") + "1a",
+      up: "#16c784", 
+      down: "#ea3943",
     };
-  }
-
-  function ensureChart() {
-    if (hist.chart || !window.LightweightCharts) return hist.chart;
-    const c = chartColors();
-    hist.chart = LightweightCharts.createChart(document.getElementById("hist-chart"), {
-      autoSize: true,
-      layout: { background: { type: "solid", color: c.bg }, textColor: c.text, fontFamily: cssVar("--sans") },
-      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
-      rightPriceScale: { borderColor: c.grid },
-      timeScale: { borderColor: c.grid, timeVisible: true, secondsVisible: false },
-      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-      handleScroll: { vertTouchDrag: false },
-    });
-    hist.chart.subscribeCrosshairMove((param) => {
-      hist.hovered = param && param.time && hist.series ? param.seriesData.get(hist.series) || null : null;
-      renderHistHead();
-    });
-    new MutationObserver(restyleChart).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    return hist.chart;
-  }
-
-  function restyleChart() {
-    if (!hist.chart) return;
-    const c = chartColors();
-    hist.chart.applyOptions({
-      layout: { background: { type: "solid", color: c.bg }, textColor: c.text },
-      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
-      rightPriceScale: { borderColor: c.grid },
-      timeScale: { borderColor: c.grid },
-    });
-    if (hist.series && hist.type === "line") {
-      hist.series.applyOptions({ lineColor: c.line, topColor: c.line + "55", bottomColor: c.line + "00" });
-    }
-  }
-
-  // Lightweight Charts renders timestamps as UTC; shifting each one by the
-  // viewer's UTC offset makes the axis read in their local time instead.
-  function localSeconds(ms) {
-    return Math.floor((ms - new Date(ms).getTimezoneOffset() * 60000) / 1000);
   }
 
   function bankList() {
@@ -538,58 +496,9 @@ docker compose up -d --build</code></pre>
     return [...seen];
   }
 
-  // [{time, value}] for the current market/bank/range, ascending, unique times.
-  function seriesValues() {
-    const cutoff = hist.range === "all" ? -Infinity : Date.now() - Number(hist.range) * 86400000;
-    const out = [];
-    hist.points.forEach((p) => {
-      const ms = Date.parse(p.recorded_at);
-      if (ms < cutoff) return;
-      const value = hist.market === "informal"
-        ? p.informal_cup
-        : p.formal && p.formal[hist.bank] ? p.formal[hist.bank].venta : null;
-      if (value === null || value === undefined) return;
-      const time = localSeconds(ms);
-      // Remove duplicate or out-of-order timestamps
-      if (out.length && out[out.length - 1].time >= time) out.pop();
-      out.push({ time, value });
-    });
-    return out;
-  }
-
-  // For candlestick charts, we need OHLC data grouped by day
-  function dailyCandles() {
-    const values = seriesValues();
-    const days = new Map();
-    values.forEach(({ time, value }) => {
-      const day = time - (time % 86400);
-      const c = days.get(day);
-      if (!c) {
-        days.set(day, { time: day, open: value, high: value, low: value, close: value });
-      } else {
-        c.high = Math.max(c.high, value);
-        c.low = Math.min(c.low, value);
-        c.close = value;
-      }
-    });
-    return [...days.values()].sort((a, b) => a.time - b.time);
-  }
-
-  function toDailyCandles(values) {
-    const days = new Map();
-    values.forEach(({ time, value }) => {
-      const day = time - (time % 86400);
-      const c = days.get(day);
-      if (!c) days.set(day, { time: day, open: value, high: value, low: value, close: value });
-      else { c.high = Math.max(c.high, value); c.low = Math.min(c.low, value); c.close = value; }
-    });
-    return [...days.values()];
-  }
-
   function fmt(v) {
     if (v === null || v === undefined || Number.isNaN(v)) return "—";
     const value = Number(v);
-    // For CUP values, usually integers or 2 decimals
     const decimals = Math.abs(value) < 10 ? 4 : (value === Math.floor(value) ? 0 : 2);
     const locale = currentLang === "es" ? "es-ES" : "en-US";
     const options = { 
@@ -613,6 +522,32 @@ docker compose up -d --build</code></pre>
     return sign + absValue.toLocaleString(locale, options);
   }
 
+  // Convert API points to simple {x, y} format for chart
+  function getChartData() {
+    const cutoff = hist.range === "all" ? -Infinity : Date.now() - Number(hist.range) * 86400000;
+    const data = [];
+    hist.points.forEach((p) => {
+      const ms = Date.parse(p.recorded_at);
+      if (ms < cutoff) return;
+      const value = hist.market === "informal"
+        ? p.informal_cup
+        : p.formal && p.formal[hist.bank] ? p.formal[hist.bank].venta : null;
+      if (value === null || value === undefined) return;
+      data.push({ x: new Date(ms), y: value });
+    });
+    return data;
+  }
+
+  // Format date for display
+  function fmtDate(date) {
+    if (!date) return "—";
+    const d = new Date(date);
+    return d.toLocaleDateString(currentLang === "es" ? "es-ES" : "en-US", { 
+      month: "short", 
+      day: "numeric"
+    });
+  }
+
   function renderHistHead() {
     const t = HIST_TEXT[currentLang] || HIST_TEXT.es;
     const cur = latestRates.find((r) => r.code === hist.code);
@@ -620,29 +555,28 @@ docker compose up -d --build</code></pre>
     const marketLabel = hist.market === "informal" ? t.informal : `${t.bank} (${hist.bank || "—"})`;
     document.getElementById("hist-title").innerHTML = `${flagHtml(hist.code)}<b>${hist.code}/CUP</b> <span>${name} · ${marketLabel}</span>`;
 
-    const values = seriesValues();
+    const data = getChartData();
     const priceEl = document.getElementById("hist-price");
     const changeEl = document.getElementById("hist-change");
     const metaEl = document.getElementById("hist-meta");
     
-    if (!values.length) {
+    if (!data.length) {
       priceEl.textContent = "—"; 
       changeEl.textContent = ""; 
       metaEl.textContent = "";
       return;
     }
     
-    const first = values[0].value;
-    const h = hist.hovered;
-    const last = values[values.length - 1].value;
-    const shown = h ? (h.close !== undefined ? h.close : h.value) : last;
+    const first = data[0].y;
+    const last = data[data.length - 1].y;
+    const shown = last; // For now, show last value
     const diff = last - first;
     const pct = first ? (diff / first) * 100 : 0;
     
     priceEl.textContent = `${fmt(shown)} CUP`;
     
     // Format change with better display
-    if (values.length >= 2) {
+    if (data.length >= 2) {
       changeEl.textContent = `${fmtChange(diff)} (${fmtChange(pct)}%)`;
       changeEl.className = "chart-change " + (diff > 0 ? "up" : diff < 0 ? "down" : "");
     } else {
@@ -650,26 +584,25 @@ docker compose up -d --build</code></pre>
       changeEl.className = "chart-change";
     }
     
-    const highs = values.map((v) => v.value);
-    const max = Math.max(...highs);
-    const min = Math.min(...highs);
+    const values = data.map((d) => d.y);
+    const max = Math.max(...values);
+    const min = Math.min(...values);
     
-    if (h && h.open !== undefined) {
-      metaEl.textContent = `O ${fmt(h.open)} · H ${fmt(h.high)} · L ${fmt(h.low)} · C ${fmt(h.close)}`;
-    } else {
-      const rangeLabel = values.length >= 2 ? 
-        `${t.high} ${fmt(max)} · ${t.low} ${fmt(min)} · ${values.length} ${t.points(values.length)}` :
-        `${values.length} ${t.points(values.length)}`;
-      metaEl.textContent = rangeLabel;
-    }
+    const rangeLabel = data.length >= 2 ? 
+      `${t.high} ${fmt(max)} · ${t.low} ${fmt(min)} · ${data.length} ${t.points(data.length)}` :
+      `${data.length} ${t.points(data.length)}`;
+    metaEl.textContent = rangeLabel;
   }
 
-  function renderHistChart() {
+  function drawCustomChart() {
     const t = HIST_TEXT[currentLang] || HIST_TEXT.es;
-    const chart = ensureChart();
+    const container = document.getElementById("hist-chart");
     const emptyEl = document.getElementById("hist-empty");
-    hist.hovered = null;
-
+    const colors = getChartColors();
+    
+    // Clear container
+    container.innerHTML = '';
+    
     // Market toggle: disable whichever side this currency doesn't have.
     const hasInformal = hist.points.some((p) => p.informal_cup !== null && p.informal_cup !== undefined);
     const banks = bankList();
@@ -685,71 +618,172 @@ docker compose up -d --build</code></pre>
     if (!banks.includes(hist.bank)) hist.bank = banks.includes("CADECA Casas de cambio") ? "CADECA Casas de cambio" : banks[0] || null;
     bankSel.innerHTML = banks.map((b) => `<option value="${b}"${b === hist.bank ? " selected" : ""}>${b}</option>`).join("");
 
-    const values = seriesValues();
-    if (chart) {
-      if (hist.series) { chart.removeSeries(hist.series); hist.series = null; }
-      const c = chartColors();
-      const priceFormat = { type: "price", precision: values.some((v) => Math.abs(v.value) < 10) ? 4 : 2, minMove: 0.0001 };
-      
-      if (hist.type === "candles") {
-        const candles = dailyCandles();
-        hist.series = chart.addCandlestickSeries({
-          upColor: c.up, 
-          downColor: c.down, 
-          wickUpColor: c.up, 
-          wickDownColor: c.down, 
-          borderVisible: false, 
-          priceFormat: priceFormat,
-        });
-        hist.series.setData(candles);
-      } else {
-        // Area or line series
-        hist.series = chart.addAreaSeries({
-          lineColor: c.line, 
-          topColor: c.line + "55", 
-          bottomColor: c.line + "00", 
-          lineWidth: 2, 
-          priceFormat: priceFormat,
-          lineStyle: 0, // Solid line
-          priceLineVisible: false,
-          lastValueVisible: false,
-        });
-        hist.series.setData(values);
-      }
-      
-      // Configure time scale for better display
-      const timeScale = chart.timeScale();
-      timeScale.fitContent();
-      
-      // Set better time format based on range
-      let timeFormat = { timeVisible: true, secondsVisible: false };
-      if (hist.range === "all" || hist.range === "365") {
-        timeFormat.tickMarkFormatter = (ts) => fmtDate(ts * 1000);
-      } else if (hist.range === "90" || hist.range === "30") {
-        timeFormat.tickMarkFormatter = (ts) => {
-          const d = new Date(ts * 1000);
-          return d.toLocaleDateString(currentLang === "es" ? "es-ES" : "en-US", { month: "short", day: "numeric" });
-        };
-      }
-      timeScale.applyOptions(timeFormat);
-      
-      // Configure price scale
-      const priceScale = chart.priceScale("right");
-      priceScale.applyOptions({
-        autoScale: true,
-        scaleMargins: { top: 0.05, bottom: 0.15 },
-      });
+    const data = getChartData();
+    
+    if (!data.length) {
+      emptyEl.hidden = false;
+      emptyEl.textContent = !hist.loaded ? "…" : (hist.error ? t.unavailable : t.collecting(0, Math.round(hist.intervalMinutes / 60)));
+      renderHistHead();
+      return;
     }
-
-    let msg = "";
-    if (!hist.loaded) msg = "…";
-    else if (hist.error || !chart) msg = t.unavailable;
-    else if (!hist.points.length) msg = t.collecting(0, Math.round(hist.intervalMinutes / 60));
-    else if (!values.length) msg = t.noData;
-    else if (values.length < 2) msg = t.collecting(values.length, Math.round(hist.intervalMinutes / 60));
-    emptyEl.hidden = !msg;
-    emptyEl.textContent = msg;
+    
+    emptyEl.hidden = true;
+    
+    // Create canvas
+    const canvas = document.createElement('canvas');
+    canvas.id = 'chart-canvas';
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    container.appendChild(canvas);
+    
+    hist.canvas = canvas;
+    hist.ctx = canvas.getContext('2d');
+    hist.data = data;
+    
+    // Wait for canvas to be sized
+    setTimeout(() => {
+      resizeAndDrawChart();
+    }, 100);
+    
     renderHistHead();
+  }
+
+  function resizeAndDrawChart() {
+    if (!hist.canvas || !hist.ctx || !hist.data.length) return;
+    
+    const canvas = hist.canvas;
+    const ctx = hist.ctx;
+    const data = hist.data;
+    const colors = getChartColors();
+    
+    // Get container dimensions
+    const container = document.getElementById('hist-chart');
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    
+    if (width <= 0 || height <= 0) return;
+    
+    // Set canvas size
+    canvas.width = width * window.devicePixelRatio || 1;
+    canvas.height = height * window.devicePixelRatio || 1;
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    
+    // Scale context
+    ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+    
+    // Clear canvas
+    ctx.fillStyle = colors.bg;
+    ctx.fillRect(0, 0, width, height);
+    
+    // Calculate padding and dimensions
+    const padding = { top: 20, right: 60, bottom: 50, left: 60 };
+    const chartWidth = width - padding.left - padding.right;
+    const chartHeight = height - padding.top - padding.bottom;
+    
+    if (chartWidth <= 0 || chartHeight <= 0) return;
+    
+    // Get min/max values
+    const yValues = data.map(d => d.y);
+    const minY = Math.min(...yValues);
+    const maxY = Math.max(...yValues);
+    const yRange = maxY - minY;
+    const yPadding = yRange * 0.1;
+    const chartMinY = minY - yPadding;
+    const chartMaxY = maxY + yPadding;
+    
+    // Draw grid lines (horizontal)
+    ctx.strokeStyle = colors.grid;
+    ctx.lineWidth = 1;
+    
+    const gridLines = 5;
+    for (let i = 0; i <= gridLines; i++) {
+      const y = padding.top + (chartHeight * i / gridLines);
+      const value = chartMaxY - (yRange * i / gridLines) - yPadding;
+      
+      ctx.beginPath();
+      ctx.moveTo(padding.left, y);
+      ctx.lineTo(width - padding.right, y);
+      ctx.stroke();
+      
+      // Draw label
+      ctx.fillStyle = colors.textDim;
+      ctx.font = '11px ' + cssVar('--sans');
+      ctx.textAlign = 'right';
+      ctx.fillText(fmt(value), width - padding.right - 5, y + 3);
+    }
+    
+    // Draw Y axis label
+    ctx.fillStyle = colors.textDim;
+    ctx.font = '10px ' + cssVar('--sans');
+    ctx.save();
+    ctx.translate(15, height / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.fillText('CUP', 0, 0);
+    ctx.restore();
+    
+    // Draw line chart
+    if (data.length >= 2) {
+      ctx.beginPath();
+      
+      data.forEach((d, i) => {
+        const x = padding.left + (i / (data.length - 1)) * chartWidth;
+        const y = padding.top + ((chartMaxY - d.y) / (chartMaxY - chartMinY)) * chartHeight;
+        
+        if (i === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+      });
+      
+      ctx.strokeStyle = colors.line;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
+      // Draw points
+      data.forEach((d, i) => {
+        const x = padding.left + (i / (data.length - 1)) * chartWidth;
+        const y = padding.top + ((chartMaxY - d.y) / (chartMaxY - chartMinY)) * chartHeight;
+        
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = colors.line;
+        ctx.fill();
+      });
+    } else if (data.length === 1) {
+      // Single point
+      const x = padding.left + chartWidth / 2;
+      const y = padding.top + ((chartMaxY - data[0].y) / (chartMaxY - chartMinY)) * chartHeight;
+      
+      ctx.beginPath();
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
+      ctx.fillStyle = colors.line;
+      ctx.fill();
+    }
+    
+    // Draw X axis labels
+    ctx.fillStyle = colors.textDim;
+    ctx.font = '10px ' + cssVar('--sans');
+    ctx.textAlign = 'center';
+    
+    const labelCount = Math.min(data.length, 8);
+    const labelStep = Math.ceil(data.length / labelCount);
+    
+    data.forEach((d, i) => {
+      if (i % labelStep !== 0 && i !== data.length - 1) return;
+      
+      const x = padding.left + (i / (data.length - 1)) * chartWidth;
+      const date = new Date(d.x);
+      const label = date.toLocaleDateString(currentLang === "es" ? "es-ES" : "en-US", { month: "short", day: "numeric" });
+      
+      ctx.save();
+      ctx.translate(x, height - padding.bottom + 20);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillText(label, 0, 0);
+      ctx.restore();
+    });
   }
 
   async function loadHistory() {
@@ -766,9 +800,10 @@ docker compose up -d --build</code></pre>
       if (seq !== hist.seq) return;
       hist.points = [];
       hist.error = true;
+      console.error('Error loading history:', err);
     }
     hist.loaded = true;
-    renderHistChart();
+    drawCustomChart();
   }
 
   function populateHistCurrencies() {
@@ -788,7 +823,7 @@ docker compose up -d --build</code></pre>
   });
   document.getElementById("hist-bank").addEventListener("change", (e) => {
     hist.bank = e.target.value;
-    renderHistChart();
+    drawCustomChart();
   });
   [["hist-market", "market"], ["hist-type", "type"], ["hist-range", "range"]].forEach(([id, key]) => {
     document.querySelectorAll(`#${id} button`).forEach((btn) => {
@@ -796,13 +831,22 @@ docker compose up -d --build</code></pre>
         if (btn.disabled) return;
         hist[key] = btn.dataset.value;
         document.querySelectorAll(`#${id} button`).forEach((b) => b.classList.toggle("active", b === btn));
-        renderHistChart();
+        drawCustomChart();
       });
     });
   });
 
+  // Add resize listener for responsive chart
+  window.addEventListener('resize', () => {
+    resizeAndDrawChart();
+  });
+
   initLang();
   loadPrice();
-  loadAllRates().then(() => { populateHistCurrencies(); renderHistHead(); });
+  loadAllRates().then(() => { 
+    populateHistCurrencies(); 
+    renderHistHead();
+    drawCustomChart();
+  });
   loadHistory();
 </script>
