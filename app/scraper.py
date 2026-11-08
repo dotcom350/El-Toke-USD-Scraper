@@ -2,22 +2,25 @@
 site's Cloudflare challenge) and parses the returned markdown into
 structured data.
 
-Not every currency page has the same sections:
-- USD, EUR, CAD, MXN have both an informal (street) and a formal (bank)
-  market section.
-- MLC, ZELLE (saldo-zelle), CLA (tarjeta-clasica) only have an informal
-  section - they aren't traded at bank counters.
-- GBP, CHF only have a formal section - elTOQUE doesn't track a street
-  rate for them.
+Since elTOQUE's late-2026 redesign the data lives on two kinds of page:
+- Each informal-market currency (USD, EUR, MLC, CAD, MXN, ZELLE, CLA) has
+  its own page with the street rate plus a 3-currency conversion summary.
+  These pages no longer include the bank (formal) table.
+- One shared "mercado-formal" page holds the bank compra/venta tables for
+  every officially-traded currency (USD, EUR, CAD, MXN, GBP, CHF, ...).
+  GBP and CHF have no page of their own anymore.
+
+So a full refresh is 7 informal pages + 1 formal page = 8 Firecrawl credits.
 """
 
 import asyncio
 import re
 from datetime import datetime, timezone
+from typing import Optional
 
 import httpx
 
-from app.currencies import CURRENCIES, SOURCE_BASE
+from app.currencies import CURRENCIES, FORMAL_SLUG, SOURCE_BASE, source_url
 
 FIRECRAWL_SCRAPE_URL = "https://api.firecrawl.dev/v2/scrape"
 
@@ -36,15 +39,22 @@ UPDATED_LABEL_RE = re.compile(
     re.IGNORECASE,
 )
 
-# (display label, regex to find the "compra | venta" numbers for that bank/channel)
-FORMAL_BANKS = [
-    ("BPA", r"BPA\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|"),
-    ("BANDEC", r"BANDEC\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|"),
-    ("BANMET Efectivo", r"BANMET\s*Efectivo\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|"),
-    ("BANMET Transferencia", r"BANMET\s*Transferencia\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|"),
-    ("CADECA Casas de cambio", r"CADECA\s*Casas de cambio\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|"),
-    ("CADECA Hoteles y Aeropuertos", r"CADECA\s*Hoteles y Aeropuertos\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|"),
-]
+# A bank row in a per-currency formal table, e.g. "| BANMETEfectivo | 752.64 | 783.36 |".
+# The redesign dropped the space between the institution and the channel
+# ("CADECACasas de cambio"), so both spellings are accepted and the label is
+# re-normalized to the original "CADECA Casas de cambio" form to keep the
+# API's response keys stable.
+FORMAL_ROW_RE = re.compile(
+    r"^\|\s*(BPA|BANDEC|BANMET|CADECA)\s*([^|]*?)\s*\|\s*([\d.]+|NaN)\s*\|\s*([\d.]+|NaN)\s*\|\s*$",
+    re.MULTILINE,
+)
+FORMAL_CODE_RE = re.compile(r"Los valores equivalen a 1 ([A-Z]{3,5})")
+
+# Ask Firecrawl for a live fetch instead of its own cache (which by default
+# can serve a copy up to 2 days old). Without this, a transient elTOQUE
+# maintenance page got cached by Firecrawl and kept being served back to us
+# long after the site was back up.
+FIRECRAWL_MAX_AGE_MS = 0
 
 
 def _clean(markdown: str) -> str:
@@ -53,7 +63,15 @@ def _clean(markdown: str) -> str:
     return markdown.replace("\x08", "").replace("\\*", "*")
 
 
-def parse_markdown(markdown: str, currency: dict) -> dict:
+def _snippet(text: str, length: int = 80) -> str:
+    return " ".join(text.split())[:length]
+
+
+def parse_informal_page(markdown: str) -> tuple[dict, Optional[str]]:
+    """Returns (informal, source_updated_label). Raises if the page doesn't
+    contain a street rate - e.g. elTOQUE served a maintenance page, or the
+    layout changed again - so the caller keeps the last-known-good value
+    instead of overwriting it with nulls."""
     text = _clean(markdown)
 
     headline_m = HEADLINE_RE.search(text)
@@ -64,43 +82,49 @@ def parse_markdown(markdown: str, currency: dict) -> dict:
     conversions: dict = {}
     if table_m:
         for i in range(0, 6, 2):
-            value = float(table_m.group(i + 1))
-            unit = table_m.group(i + 2).upper()
-            conversions[unit] = value
+            conversions[table_m.group(i + 2).upper()] = float(table_m.group(i + 1))
 
     cup_rate = conversions.pop("CUP", None)
     if cup_rate is None:
         cup_rate = headline_cup
-
-    informal = None
-    if cup_rate is not None or conversions:
-        informal = {
-            "cup": cup_rate,
-            "conversions": conversions,
-            "change_vs_yesterday_cup": change_cup,
-        }
-
-    formal: dict = {}
-    for label, pattern in FORMAL_BANKS:
-        fm = re.search(pattern, text)
-        if fm:
-            formal[label] = {"compra": float(fm.group(1)), "venta": float(fm.group(2))}
+    if cup_rate is None:
+        raise RuntimeError(f"no informal rate found on page: {_snippet(text)!r}")
 
     label_m = UPDATED_LABEL_RE.search(text)
-
-    return {
-        "code": currency["code"],
-        "name_es": currency["name_es"],
-        "name_en": currency["name_en"],
-        "scraped_at": datetime.now(timezone.utc).isoformat(),
-        "source_url": f"{SOURCE_BASE}/{currency['slug']}",
-        "source_updated_label": label_m.group(0) if label_m else None,
-        "informal": informal,
-        "formal": formal or None,
+    informal = {
+        "cup": cup_rate,
+        "conversions": conversions,
+        "change_vs_yesterday_cup": change_cup,
     }
+    return informal, (label_m.group(0) if label_m else None)
 
 
-async def _scrape_one(client: httpx.AsyncClient, api_key: str, currency: dict, max_retries: int = 4) -> dict:
+def parse_formal_page(markdown: str) -> dict:
+    """Parses the shared mercado-formal page into
+    {code: {"formal": {bank: {compra, venta}}, "label": str | None}}.
+    Banks quoting "NaN" (no rate for that currency) are left out."""
+    text = _clean(markdown)
+    result: dict = {}
+    for section in re.split(r"^## ", text, flags=re.MULTILINE):
+        code_m = FORMAL_CODE_RE.search(section)
+        if not code_m:
+            continue
+        banks: dict = {}
+        for m in FORMAL_ROW_RE.finditer(section):
+            institution, channel, compra, venta = m.groups()
+            if compra == "NaN" or venta == "NaN":
+                continue
+            label = f"{institution} {channel}".strip()
+            banks[label] = {"compra": float(compra), "venta": float(venta)}
+        if banks:
+            label_m = UPDATED_LABEL_RE.search(section)
+            result[code_m.group(1)] = {"formal": banks, "label": label_m.group(0) if label_m else None}
+    if not result:
+        raise RuntimeError(f"no bank rate tables found on page: {_snippet(text)!r}")
+    return result
+
+
+async def _fetch_markdown(client: httpx.AsyncClient, api_key: str, url: str, max_retries: int = 4) -> str:
     for attempt in range(max_retries):
         resp = await client.post(
             FIRECRAWL_SCRAPE_URL,
@@ -108,7 +132,7 @@ async def _scrape_one(client: httpx.AsyncClient, api_key: str, currency: dict, m
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
-            json={"url": f"{SOURCE_BASE}/{currency['slug']}", "formats": ["markdown"]},
+            json={"url": url, "formats": ["markdown"], "maxAge": FIRECRAWL_MAX_AGE_MS},
         )
         if resp.status_code == 429 and attempt < max_retries - 1:
             retry_after = resp.headers.get("Retry-After")
@@ -119,32 +143,85 @@ async def _scrape_one(client: httpx.AsyncClient, api_key: str, currency: dict, m
         payload = resp.json()
 
         if not payload.get("success"):
-            raise RuntimeError(f"Firecrawl returned an error for {currency['code']}: {payload}")
+            raise RuntimeError(f"Firecrawl returned an error for {url}: {payload}")
+        status = (payload["data"].get("metadata") or {}).get("statusCode")
+        if status and status >= 400:
+            raise RuntimeError(f"{url} returned HTTP {status}")
+        return payload["data"]["markdown"]
 
-        return parse_markdown(payload["data"]["markdown"], currency)
-
-    raise RuntimeError(f"Firecrawl kept rate-limiting {currency['code']} after {max_retries} attempts")
+    raise RuntimeError(f"Firecrawl kept rate-limiting {url} after {max_retries} attempts")
 
 
-async def scrape_all(api_key: str) -> dict:
-    """Scrape every currency in CURRENCIES, one at a time. Firecrawl's rate
-    limit rejects concurrent scrapes (429), so this deliberately runs
-    sequentially rather than in parallel. Per-currency failures are
-    collected in "errors" rather than aborting the whole batch, so one bad
-    page doesn't take down currencies that scraped fine.
+async def scrape_all(api_key: str, previous: Optional[dict] = None) -> dict:
+    """Scrape every currency in CURRENCIES, one page at a time (Firecrawl's
+    rate limit rejects concurrent scrapes with 429).
+
+    `previous` is the last cached {code: entry} map. Any part (informal or
+    formal) that fails this cycle falls back to its previous value, so a
+    transient failure or a maintenance page never blanks out a rate that
+    was fine before. Failures are reported in "errors".
     """
-    results: dict = {}
+    previous = previous or {}
     errors: dict = {}
+    now = datetime.now(timezone.utc).isoformat()
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=60) as client:
+        formal_by_code: Optional[dict] = None
+        try:
+            md = await _fetch_markdown(client, api_key, f"{SOURCE_BASE}/{FORMAL_SLUG}")
+            formal_by_code = parse_formal_page(md)
+        except Exception as exc:  # noqa: BLE001 - fall back to previous formal data
+            errors["formal"] = str(exc)
+
+        results: dict = {}
         for currency in CURRENCIES:
-            try:
-                results[currency["code"]] = await _scrape_one(client, api_key, currency)
-            except Exception as exc:  # noqa: BLE001 - isolate this currency's failure
-                errors[currency["code"]] = str(exc)
+            code = currency["code"]
+            prev = previous.get(code) or {}
+            fresh = False
+            label = None
+
+            informal = None
+            if currency["slug"]:
+                try:
+                    md = await _fetch_markdown(client, api_key, source_url(currency))
+                    informal, label = parse_informal_page(md)
+                    fresh = True
+                except Exception as exc:  # noqa: BLE001 - isolate this currency's failure
+                    errors[code] = str(exc)
+                    informal = prev.get("informal")
+
+            formal = None
+            if currency["formal"]:
+                section = (formal_by_code or {}).get(code)
+                if section:
+                    formal = section["formal"]
+                    label = label or section["label"]
+                    fresh = True
+                else:
+                    if formal_by_code is not None:
+                        errors[f"{code}.formal"] = "currency missing from the mercado-formal page"
+                    formal = prev.get("formal")
+
+            if not fresh:
+                # Nothing new this cycle - keep the old entry untouched (with
+                # its original scraped_at) rather than restamping stale data.
+                if prev:
+                    results[code] = prev
+                continue
+
+            results[code] = {
+                "code": code,
+                "name_es": currency["name_es"],
+                "name_en": currency["name_en"],
+                "scraped_at": now,
+                "source_url": source_url(currency),
+                "source_updated_label": label or prev.get("source_updated_label"),
+                "informal": informal,
+                "formal": formal,
+            }
 
     return {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": now,
         "currencies": results,
         "errors": errors or None,
     }

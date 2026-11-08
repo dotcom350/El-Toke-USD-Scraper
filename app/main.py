@@ -57,16 +57,11 @@ admin_router = build_admin_router(bot_manager)
 
 async def refresh_job() -> None:
     try:
-        data = await scrape_all(FIRECRAWL_API_KEY)
-        # Merge onto the existing cache instead of replacing it wholesale,
-        # so a currency that fails this cycle (transient Firecrawl error)
-        # keeps showing its last-known-good rate instead of disappearing
-        # until the next successful scrape.
-        existing = cache.get()
-        if existing and existing.get("currencies"):
-            merged = dict(existing["currencies"])
-            merged.update(data["currencies"])
-            data["currencies"] = merged
+        # Pass the existing cache in so any part (informal/formal) that fails
+        # this cycle - transient Firecrawl error, elTOQUE maintenance page -
+        # keeps its last-known-good value instead of being blanked out.
+        existing = cache.get() or {}
+        data = await scrape_all(FIRECRAWL_API_KEY, previous=existing.get("currencies"))
         cache.set(data)
         ok_count = len(data["currencies"])
         logger.info(

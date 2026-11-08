@@ -14,22 +14,23 @@ También es un **servidor [MCP](https://modelcontextprotocol.io)** (`/mcp/`), as
 
 ## Cómo funciona
 
-- Un scheduler en segundo plano scrapea, **secuencialmente**, las 9 páginas de moneda de elTOQUE vía Firecrawl cada `SCRAPE_INTERVAL_MINUTES` (480 = 8h por defecto) y cachea el resultado parseado en `data/cache.json`. Es secuencial (no en paralelo) porque Firecrawl devuelve 429 (rate limit) si le mandas varios scrapes a la vez; cada llamada reintenta automáticamente con backoff si eso pasa.
+- Un scheduler en segundo plano scrapea, **secuencialmente**, las páginas de elTOQUE vía Firecrawl (las 7 páginas de moneda con tasa informal + la página compartida de `mercado-formal` con las tablas de bancos) cada `SCRAPE_INTERVAL_MINUTES` (480 = 8h por defecto) y cachea el resultado parseado en `data/cache.json`. Es secuencial (no en paralelo) porque Firecrawl devuelve 429 (rate limit) si le mandas varios scrapes a la vez; cada llamada reintenta automáticamente con backoff si eso pasa.
 - Las solicitudes a la API **nunca** disparan un scrape en vivo — solo leen el caché, así que las respuestas son instantáneas y no gastan créditos de Firecrawl.
 - Cada respuesta incluye `requested_at`, calculado en el instante exacto en que la solicitud llega al servidor — **no** la hora en que se scrapeó la data (eso es `data.scraped_at` / `generated_at`).
-- No todas las monedas tienen ambos mercados: MLC, ZELLE (saldo Zelle) y CLA (saldo tarjeta clásica) solo se cambian de forma informal (no hay mostrador de banco); GBP y CHF solo tienen tasa oficial de banco (elTOQUE no seguirle la pista al mercado informal).
+- No todas las monedas tienen ambos mercados: MLC, ZELLE (saldo Zelle) y CLA (saldo tarjeta clásica) solo se cambian de forma informal (no hay mostrador de banco); GBP y CHF solo tienen tasa oficial de banco (elTOQUE no les sigue la pista en el mercado informal).
+- Si una página falla o elTOQUE muestra su página de mantenimiento, esa parte (informal o formal) mantiene su último valor bueno en vez de quedar en `null`.
 
 ### Matemática de créditos de Firecrawl
 
-El tier gratuito de Firecrawl da **1000 créditos/mes**, y una llamada normal a `/v2/scrape` cuesta **1 crédito**. Cada ciclo de refresco scrapea las **9 monedas**, así que el costo es 9x el de una API de una sola moneda.
+El tier gratuito de Firecrawl da **1000 créditos/mes**, y una llamada normal a `/v2/scrape` cuesta **1 crédito**. Cada ciclo de refresco scrapea **8 páginas** (7 de moneda + 1 de mercado formal) para cubrir las 9 monedas, así que el costo es 8 créditos por ciclo.
 
 | Intervalo | Scrapes/día | Créditos/mes | ¿Entra en 1000? |
 | --- | --- | --- | --- |
-| 60 min | 9 × 24 = 216 | ~6,480 | No |
-| 240 min (4h) | 9 × 6 = 54 | ~1,620 | No |
-| 360 min (6h) | 9 × 4 = 36 | ~1,080 | Casi (se pasa un poco) |
-| **480 min / 8h (por defecto)** | **9 × 3 = 27** | **~810** | **Sí, ~190 créditos de margen** |
-| 720 min (12h) | 9 × 2 = 18 | ~540 | Sí, mucho margen |
+| 60 min | 8 × 24 = 192 | ~5,760 | No |
+| 240 min (4h) | 8 × 6 = 48 | ~1,440 | No |
+| 360 min (6h) | 8 × 4 = 32 | ~960 | Justo (~40 créditos de margen) |
+| **480 min / 8h (por defecto)** | **8 × 3 = 24** | **~720** | **Sí, ~280 créditos de margen** |
+| 720 min (12h) | 8 × 2 = 16 | ~480 | Sí, mucho margen |
 
 El valor por defecto (cada 8h) deja margen para pruebas manuales, reinicios, y el scrape inmediato que corre cada vez que arranca la app.
 

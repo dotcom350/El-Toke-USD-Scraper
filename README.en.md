@@ -14,22 +14,23 @@ It's also an **[MCP](https://modelcontextprotocol.io) server** (`/mcp/`), so age
 
 ## How it works
 
-- A background scheduler scrapes elTOQUE's 9 currency pages through Firecrawl, **sequentially**, every `SCRAPE_INTERVAL_MINUTES` (480 = 8h by default), and caches the parsed result to `data/cache.json`. It's sequential rather than parallel because Firecrawl returns 429 (rate limited) if you fire several scrapes at once; each call retries automatically with backoff when that happens.
+- A background scheduler scrapes elTOQUE's pages through Firecrawl (the 7 currency pages that carry an informal rate + the shared `mercado-formal` page with every bank table), **sequentially**, every `SCRAPE_INTERVAL_MINUTES` (480 = 8h by default), and caches the parsed result to `data/cache.json`. It's sequential rather than parallel because Firecrawl returns 429 (rate limited) if you fire several scrapes at once; each call retries automatically with backoff when that happens.
 - API requests **never** trigger a live scrape — they just read the cache, so responses are instant and don't burn Firecrawl credits.
 - Every response includes `requested_at`, computed at the exact moment the request hits the server — **not** the time the data was scraped (that's `data.scraped_at` / `generated_at`).
 - Not every currency has both markets: MLC, ZELLE (Zelle balance) and CLA (classic card balance) only trade informally (no bank counter for them); GBP and CHF only have an official bank rate (elTOQUE doesn't track a street rate for those).
+- If a page fails or elTOQUE serves its maintenance page, that part (informal or formal) keeps its last-known-good value instead of turning into `null`.
 
 ### Firecrawl credits math
 
-Firecrawl's free tier gives **1000 credits/month**, and a plain `/v2/scrape` call costs **1 credit**. Each refresh cycle scrapes all **9 currencies**, so the cost is 9x a single-currency API.
+Firecrawl's free tier gives **1000 credits/month**, and a plain `/v2/scrape` call costs **1 credit**. Each refresh cycle scrapes **8 pages** (7 currency pages + 1 formal-market page) to cover all 9 currencies, so it costs 8 credits per cycle.
 
 | Interval | Scrapes/day | Credits/month | Fits in 1000? |
 | --- | --- | --- | --- |
-| 60 min | 9 × 24 = 216 | ~6,480 | No |
-| 240 min (4h) | 9 × 6 = 54 | ~1,620 | No |
-| 360 min (6h) | 9 × 4 = 36 | ~1,080 | Just barely over |
-| **480 min / 8h (default)** | **9 × 3 = 27** | **~810** | **Yes, ~190 credits of buffer** |
-| 720 min (12h) | 9 × 2 = 18 | ~540 | Yes, plenty of buffer |
+| 60 min | 8 × 24 = 192 | ~5,760 | No |
+| 240 min (4h) | 8 × 6 = 48 | ~1,440 | No |
+| 360 min (6h) | 8 × 4 = 32 | ~960 | Just barely (~40 credits of buffer) |
+| **480 min / 8h (default)** | **8 × 3 = 24** | **~720** | **Yes, ~280 credits of buffer** |
+| 720 min (12h) | 8 × 2 = 16 | ~480 | Yes, plenty of buffer |
 
 The default (every 8h) leaves headroom for manual testing, restarts, and the immediate scrape that runs on every app startup.
 
@@ -159,7 +160,7 @@ Environment variables (see `.env.example`):
 | Variable | Default | Description |
 | --- | --- | --- |
 | `FIRECRAWL_API_KEY` | — (required) | Your Firecrawl API key. Get one free at firecrawl.dev. |
-| `SCRAPE_INTERVAL_MINUTES` | `480` | Minutes between scrapes (of all 9 currencies). See credits math above. |
+| `SCRAPE_INTERVAL_MINUTES` | `480` | Minutes between scrapes (8 pages covering all 9 currencies). See credits math above. |
 | `PORT` | `8000` | Host port exposed by docker compose. |
 | `ADMIN_PASSWORD` | — (required) | Password to log into `/admin`. |
 | `SESSION_SECRET` | — (required) | Secret used to sign the admin panel's session cookie. Generate with `python -c "import secrets; print(secrets.token_hex(32))"`. |
