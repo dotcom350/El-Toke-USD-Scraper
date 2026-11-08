@@ -1,0 +1,242 @@
+[
+  {
+    "recorded_at": "2026-08-11T19:45:22.062276+00:00",
+    "informal_cup": 435.7661047321456,
+    "formal": {
+      "BPA": {
+        "compra": 428.19,
+        "venta": 445.67
+      },
+      "BANDEC": {
+        "compra": 412.84,
+        "venta": 429.69
+      },
+      "BANMET Efectivo": {
+        "compra": 429.46,
+        "venta": 446.99
+      },
+      "BANMET Transferencia": {
+        "compra": 438.22,
+        "venta": 444.79
+      },
+      "CADECA Casas de cambio": {
+        "compra": 412.03,
+        "venta": 428.51
+      },
+      "CADECA Hoteles y Aeropuertos": {
+        "compra": 423.82,
+        "venta": 463.15
+      }
+    }
+  },
+  {
+    "recorded_at": "2026-08-12T19:45:22.062276+00:00",
+    "informal_cup": 437.68039020813984,
+    "formal": {
+      "BPA": {
+        "compra": 428.19,
+        "venta": 445.67
+      },
+      "BANDEC": {
+        "compra": 412.84,
+        "venta": 429.69
+      },
+      "BANMET Efectivo": {
+        "compra": 429.46,
+        "venta": 446.99
+      },
+      "BANMET Transferencia": {
+        "compra": 438.22,
+        "venta": 444.79
+      },
+      "CADECA Casas de cambio": {
+        "compra": 412.03,
+        "venta": 428.51
+      },
+      "CADECA Hoteles y Aeropuertos": {
+        "compra": 423.82,
+        "venta": 463.15
+      }
+    }
+  },
+  {
+    "recorded_at": "2026-08-13T19:45:22.062276+00:00",
+    "informal_cup": 437.94910327216775,
+    "formal": {
+      "BPA": {
+        "compra": 428.19,
+        "venta": 445.67
+      },
+      "BANDEC": {
+        "compra": 412.84,
+        "venta": 429.69
+      },
+      "BANMET Efectivo": {
+        "compra": 429.46,
+        "venta": 446.99
+      },
+      "BANMET Transferencia": {
+        "compra": 438.22,
+        "venta": 444.79
+      },
+      "CADECA Casas de cambio": {
+        "compra": 412.03,
+        "venta": 428.51
+      },
+      "CADECA Hoteles y Aeropuertos": {
+        "compra": 423.82,
+        "venta": 463.15
+      }
+    }
+  },
+  {
+    "recorded_at": "2026-08-14T19:45:22.062276+00:00",
+    "informal_cup": 439.6450154032816,
+    "formal": {
+      "BPA": {
+        "compra": 428.19,
+        "venta": 445.67
+      },
+      "BANDEC": {
+        "compra": 412.84,
+        "venta": 429.69
+      },
+      "BANMET Efectivo": {
+        "compra": 429.46,
+        "venta": 446.99
+      },
+      "BANMET Transferencia": {
+        "compra": 438.22,
+        "venta": 444.79
+      },
+      "CADECA Casas de cambio": {
+        "compra": 412.03,
+        "venta": 428.51
+      },
+      "CADECA Hoteles y Aeropuertos": {
+        "compra": 423.82,
+        "venta": 463.15
+      }
+    }
+  },
+  {
+    "recorded_at": "2026-08-15T19:45:22.062276+00:00",
+    "informal_cup": 435.72499912647135,
+    "formal": {
+      "BPA": {
+        "compra": 428.19,
+        "venta": 445.67
+      },
+      "BANDEC": {
+        "compra": 412.84,
+        "venta": 429.69
+      },
+      "BANMET Efectivo": {
+        "compra": 429.46,
+        "venta": 446.99
+      },
+      "BANMET Transferencia": {
+        "compra": 438.22,
+        "venta": 444.79
+      },
+      "CADECA Casas de cambio": {
+        "compra": 412.03,
+        "venta": 428.51
+      },
+      "CADECA Hoteles y Aeropuertos": {
+        "compra": 423.82,
+        "venta": 463.15
+      }
+    }
+  },
+  {
+    "recorded_at": "2026-08-16T19:45:22.062276+00:00",
+    "informal_cup": 439.4317114124697,
+    "formal": {
+      "BPA": {
+        "compra": 428.19,
+        "venta": 445.67
+      },
+      "BANDEC": {
+        "compra": 412.84,
+        "venta": 429.69
+      },
+      "BANMET Efectivo": {
+        "compra": 429.46,
+        "venta": 446.99
+      },
+      "BANMET Transferencia": {
+        "compra": 438.22,
+        "venta": 444.79
+      },
+      "CADECA Casas de cambio": {
+        "compra": 412.03,
+        "venta": 428.51
+      },
+      "CADECA Hoteles y Aeropuertos": {
+        "compra": 423.82,
+        "venta": 463.15
+      }
+    }
+  },
+  {
+    "recorded_at": "2026-08-17T19:45:22.062276+00:00",
+    "informal_cup": 432.18083994805954,
+    "formal": {
+      "BPA": {
+        "compra": 428.19,
+        "venta": 445.67
+      },
+      "BANDEC": {
+        "compra": 412.84,
+        "venta": 429.69
+      },
+      "BANMET Efectivo": {
+        "compra": 429.46,
+        "venta": 446.99
+      },
+      "BANMET Transferencia": {
+        "compra": 438.22,
+        "venta": 444.79
+      },
+      "CADECA Casas de cambio": {
+        "compra": 412.03,
+        "venta": 428.51
+      },
+      "CADECA Hoteles y Aeropuertos": {
+        "compra": 423.82,
+        "venta": 463.15
+      }
+    }
+  },
+  {
+    "recorded_at": "2026-08-18T19:45:22.062276+00:00",
+    "informal_cup": 439.395376250739,
+    "formal": {
+      "BPA": {
+        "compra": 428.19,
+        "venta": 445.67
+      },
+      "BANDEC": {
+        "compra": 412.84,
+        "venta": 429.69
+      },
+      "BANMET Efectivo": {
+        "compra": 429.46,
+        "venta": 446.99
+      },
+      "BANMET Transferencia": {
+        "compra": 438.22,
+        "venta": 444.79
+      },
+      "CADECA Casas de cambio": {
+        "compra": 412.03,
+        "venta": 428.51
+      },
+      "CADECA Hoteles y Aeropuertos": {
+        "compra": 423.82,
+        "venta": 463.15
+      }
+    }
+  }
+]

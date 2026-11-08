@@ -4,6 +4,7 @@ import os
 import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -28,6 +29,56 @@ logger = logging.getLogger("cuba-usd-rate-api")
 FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY")
 INTERVAL_MINUTES = int(os.getenv("SCRAPE_INTERVAL_MINUTES", "480"))
 CACHE_PATH = os.getenv("CACHE_PATH", "data/cache.json")
+HISTORY_DIR = os.getenv("HISTORY_DIR", "data/history")
+
+
+async def save_history_to_json(rows: list, generated_at: Optional[str] = None) -> None:
+    """Save history data to JSON files, one per currency."""
+    Path(HISTORY_DIR).mkdir(parents=True, exist_ok=True)
+    for code, recorded_at, informal_cup, formal_json in rows:
+        filepath = Path(HISTORY_DIR) / f"{code}.json"
+        entry = {
+            "recorded_at": recorded_at.isoformat(),
+            "informal_cup": informal_cup,
+            "formal": json.loads(formal_json) if formal_json else None,
+        }
+        try:
+            if filepath.exists():
+                with open(filepath, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            else:
+                existing = []
+            existing.append(entry)
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(existing, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"Could not save history for {code}: {e}")
+
+
+async def load_history_from_json(code: str, since=None, limit: int = 10000) -> list[dict]:
+    """Load history from JSON file for a specific currency."""
+    filepath = Path(HISTORY_DIR) / f"{code}.json"
+    if not filepath.exists():
+        return []
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            all_points = json.load(f)
+        
+        points = []
+        for entry in all_points:
+            recorded_at = datetime.fromisoformat(entry["recorded_at"])
+            if since and recorded_at < since:
+                continue
+            points.append({
+                "recorded_at": entry["recorded_at"],
+                "informal_cup": entry["informal_cup"],
+                "formal": entry["formal"],
+            })
+        
+        return sorted(points, key=lambda x: x["recorded_at"], reverse=True)[-limit:][::-1]
+    except Exception as e:
+        logger.error(f"Could not load history for {code}: {e}")
+        return []
 
 SESSION_SECRET = os.getenv("SESSION_SECRET") or secrets.token_hex(32)
 if not os.getenv("SESSION_SECRET"):
@@ -62,7 +113,7 @@ async def record_history_snapshot(snapshot: dict | None) -> None:
     unchanged from an earlier cycle keep their original scraped_at, so the
     (code, recorded_at) unique key makes re-recording them a no-op - only
     freshly scraped values add new points."""
-    if not snapshot or not db.pool_ready():
+    if not snapshot:
         return
     rows = []
     for code, entry in (snapshot.get("currencies") or {}).items():
@@ -76,12 +127,23 @@ async def record_history_snapshot(snapshot: dict | None) -> None:
             informal,
             json.dumps(formal) if formal else None,
         ))
+    
+    # Try database first
+    if db.pool_ready():
+        try:
+            added = await db.record_history(rows)
+            if added:
+                logger.info("Recorded %d new history points in database", added)
+            return
+        except Exception:  # noqa: BLE001
+            logger.exception("Could not record rate history in database, trying JSON fallback")
+    
+    # Fallback: save to JSON file
     try:
-        added = await db.record_history(rows)
-        if added:
-            logger.info("Recorded %d new history points", added)
-    except Exception:  # noqa: BLE001 - history is best-effort, never break the scrape
-        logger.exception("Could not record rate history")
+        await save_history_to_json(rows, snapshot.get("generated_at"))
+        logger.info("Recorded %d new history points in JSON file", len(rows))
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not record rate history at all")
 
 
 async def refresh_job() -> None:
@@ -241,18 +303,30 @@ async def get_history(code: str, days: Optional[int] = Query(None, ge=1, le=3650
     code = code.upper()
     if code not in CURRENCIES_BY_CODE:
         raise HTTPException(status_code=404, detail=f"Unknown currency code: {code}")
-    if not db.pool_ready():
-        raise HTTPException(status_code=503, detail="History is unavailable (no database configured).")
+    
     since = datetime.now(timezone.utc) - timedelta(days=days) if days else None
-    rows = await db.get_history(code, since=since)
-    points = [
-        {
-            "recorded_at": r["recorded_at"].isoformat(),
-            "informal_cup": r["informal_cup"],
-            "formal": json.loads(r["formal"]) if r["formal"] else None,
-        }
-        for r in rows
-    ]
+    
+    # Try database first
+    points = []
+    if db.pool_ready():
+        try:
+            rows = await db.get_history(code, since=since)
+            points = [
+                {
+                    "recorded_at": r["recorded_at"].isoformat(),
+                    "informal_cup": r["informal_cup"],
+                    "formal": json.loads(r["formal"]) if r["formal"] else None,
+                }
+                for r in rows
+            ]
+        except Exception:
+            logger.exception("Database history load failed, trying JSON fallback")
+            points = []
+    
+    # Fallback to JSON files
+    if not points:
+        points = await load_history_from_json(code, since=since)
+    
     return {
         "success": True,
         "requested_at": requested_at,
