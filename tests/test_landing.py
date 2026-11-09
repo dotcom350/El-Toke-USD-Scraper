@@ -217,3 +217,24 @@ class LandingTests(unittest.TestCase):
         self.page.locator('.lang-toggle [data-lang="en"]').click()
         self.assertEqual(self.page.evaluate("[hist.view.start, hist.view.end]"), view)
         self.assert_chart_drawn()
+
+    def test_drag_moves_the_chart_even_when_everything_already_fits(self):
+        self.write_history("USD", [905, 910, 920, 918, 925])
+        self.load()
+        canvas = self.page.locator("#chart-canvas")
+        canvas.scroll_into_view_if_needed()
+        box = canvas.bounding_box()
+        cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+        start = self.page.evaluate("hist.view.start")
+        self.page.mouse.move(cx, cy)
+        self.page.mouse.down()
+        self.page.mouse.move(cx + 250, cy, steps=8)
+        self.page.mouse.up()
+        self.assertLess(self.page.evaluate("hist.view.start"), start)
+        # Dragging far away never loses the line completely.
+        self.page.mouse.move(cx, cy)
+        self.page.mouse.down()
+        self.page.mouse.move(cx + 3000, cy, steps=8)
+        self.page.mouse.up()
+        self.assertGreater(self.page.evaluate("hist.view.end"), self.page.evaluate("hist.data[0].x"))
+        self.assert_chart_drawn()

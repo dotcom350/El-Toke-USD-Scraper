@@ -554,15 +554,12 @@ docker compose up -d --build</code></pre>
     return data.sort((a, b) => a.x - b.x);
   }
 
-  // How far the window may be dragged: the whole series (plus a small
-  // margin) and the selected range's own window.
-  function bounds() {
+  // Widest zoom-out: three times the series (or the selected range), so
+  // there is always room to drag even when everything already fits.
+  function maxSpan() {
     const data = hist.data;
-    const first = data[0].x;
-    const last = data[data.length - 1].x;
-    const margin = Math.max((last - first) * 0.04, 12 * HOUR);
     const w = rangeWindow();
-    return { start: Math.min(first - margin, w.start), end: Math.max(last + margin, w.end) };
+    return Math.max((data[data.length - 1].x - data[0].x) * 3, (w.end - w.start) * 2, 2 * DAY);
   }
 
   function rangeWindow() {
@@ -579,11 +576,15 @@ docker compose up -d --build</code></pre>
     return { start: now - span, end: now + span * 0.03 };
   }
 
+  // The window can be dragged freely, past either end of the series, as
+  // long as at least a fifth of it still overlaps the data.
   function setView(start, end) {
-    const b = bounds();
-    let span = Math.max(end - start, MIN_SPAN);
-    span = Math.min(span, b.end - b.start);
-    start = Math.min(Math.max(start, b.start), b.end - span);
+    const data = hist.data;
+    const first = data[0].x;
+    const last = data[data.length - 1].x;
+    const span = Math.min(Math.max(end - start, MIN_SPAN), maxSpan());
+    const keep = span * 0.2;
+    start = Math.min(Math.max(start, first + keep - span), last - keep);
     hist.view = { start, end: start + span };
   }
 
@@ -980,8 +981,7 @@ docker compose up -d --build</code></pre>
     const { start, end } = hist.view;
     const anchor = anchorMs === undefined ? (start + end) / 2 : anchorMs;
     const ratio = (anchor - start) / (end - start);
-    const b = bounds();
-    const span = Math.min(Math.max((end - start) * factor, MIN_SPAN), b.end - b.start);
+    const span = Math.min(Math.max((end - start) * factor, MIN_SPAN), maxSpan());
     setView(anchor - ratio * span, anchor - ratio * span + span);
     scheduleDraw();
   }
