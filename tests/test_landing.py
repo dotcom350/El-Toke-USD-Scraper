@@ -168,3 +168,52 @@ class LandingTests(unittest.TestCase):
         self.assertTrue(self.page.locator("#hist-empty").is_visible())
         self.assertIn("665 CUP", self.page.locator("#rates-body").inner_text())
         self.assertEqual(self.errors, [])
+
+    def write_daily(self, code, days):
+        today = self.now.date()
+        values = {(today - timedelta(days=d)).isoformat(): 600 + (days - d) for d in range(1, days + 1)}
+        (Path(self.temp.name) / f"{code}.daily.json").write_text(json.dumps(values), encoding="utf-8")
+
+    def view_span(self):
+        return self.page.evaluate("hist.view.end - hist.view.start")
+
+    def test_daily_backfill_is_drawn_and_chart_can_be_panned_and_zoomed(self):
+        self.write_daily("USD", 90)
+        self.load()
+        self.assert_chart_drawn()
+        self.assertIn("91 puntos", self.page.locator("#hist-meta").inner_text())
+        full = self.view_span()
+
+        canvas = self.page.locator("#chart-canvas")
+        canvas.scroll_into_view_if_needed()
+        box = canvas.bounding_box()
+        cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+        self.page.mouse.move(cx, cy)
+        self.page.mouse.wheel(0, -400)
+        self.page.wait_for_function(f"hist.view.end - hist.view.start < {full * 0.8}")
+        self.assertNotIn("91 puntos", self.page.locator("#hist-meta").inner_text())
+
+        start = self.page.evaluate("hist.view.start")
+        self.page.mouse.move(cx, cy)
+        self.page.mouse.down()
+        self.page.mouse.move(cx + 200, cy, steps=5)
+        self.page.mouse.up()
+        self.assertLess(self.page.evaluate("hist.view.start"), start)
+
+        self.page.locator('#hist-zoom [data-zoom="in"]').click()
+        self.page.locator('#hist-zoom [data-zoom="reset"]').click()
+        self.assertAlmostEqual(self.view_span(), full, delta=1000)
+        self.page.locator('#hist-range [data-value="30"]').click()
+        self.assert_chart_drawn()
+        self.page.mouse.move(cx, cy)  # crosshair + tooltip
+        self.page.wait_for_timeout(50)
+        self.assertEqual(self.errors, [])
+
+    def test_language_switch_keeps_the_panned_view(self):
+        self.write_daily("USD", 30)
+        self.load()
+        self.page.locator('#hist-zoom [data-zoom="in"]').click()
+        view = self.page.evaluate("[hist.view.start, hist.view.end]")
+        self.page.locator('.lang-toggle [data-lang="en"]').click()
+        self.assertEqual(self.page.evaluate("[hist.view.start, hist.view.end]"), view)
+        self.assert_chart_drawn()

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
-from app import main
+from app import daily_history, main
 from app.cache import RateCache
 
 
@@ -85,3 +85,40 @@ class HistoryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(client.get("/api/v2/history/USD").json()["points"], [])
             self.assertEqual(client.get("/api/v2/history/UNKNOWN").status_code, 404)
             self.assertEqual(client.get("/api/v2/history/USD?days=0").status_code, 422)
+
+    async def test_daily_values_fill_only_days_without_a_scrape(self):
+        today = self.now.date()
+        await main.save_history_to_json([self.row(self.now, 900)])
+        daily_history.save_daily(self.temp.name, "USD", {
+            (today - timedelta(days=d)).isoformat(): 800 + d for d in range(0, 4)
+        })
+        payload = await main.get_history("usd", days=None)
+        points = payload["points"]
+        # Today has a real scrape, so its daily median is not added on top.
+        self.assertEqual([p["informal_cup"] for p in points], [803, 802, 801, 900])
+        self.assertEqual([p["source"] for p in points], ["daily", "daily", "daily", "scrape"])
+        self.assertTrue(points[0]["recorded_at"].endswith("T12:00:00+00:00"))
+        recent = await main.get_history("USD", days=2)
+        self.assertEqual([p["informal_cup"] for p in recent["points"]], [802, 801, 900])
+
+    def test_daily_import_accepts_both_file_shapes_and_overwrites_a_day(self):
+        values = daily_history.normalize([
+            {"date": "2026-08-10", "price": 665.84},
+            {"_id": "2026-08-11", "median": "670"},
+            {"date": "not-a-date", "price": 1},
+            {"date": "2026-08-12", "price": None},
+            {"date": "2026-08-13", "price": -5},
+        ])
+        self.assertEqual(values, {"2026-08-10": 665.84, "2026-08-11": 670.0})
+        self.assertEqual(daily_history.save_daily(self.temp.name, "usd", values), 2)
+        self.assertEqual(daily_history.save_daily(self.temp.name, "USD", values), 0)
+        self.assertEqual(daily_history.save_daily(self.temp.name, "USD", {"2026-08-11": 671.0}), 1)
+        self.assertEqual(daily_history.load_daily(self.temp.name, "USD")["2026-08-11"], 671.0)
+        # The per-scrape history file is a different file and stays untouched.
+        self.assertEqual(await_points(self.temp.name), [])
+
+
+def await_points(history_dir):
+    import asyncio
+    with patch.object(main, "HISTORY_DIR", history_dir):
+        return asyncio.run(main.load_history_from_json("USD"))

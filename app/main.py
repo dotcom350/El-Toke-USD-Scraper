@@ -20,6 +20,7 @@ from app.assets import content_hash
 from app.bot import BotManager
 from app.cache import RateCache
 from app.currencies import CURRENCIES, CURRENCIES_BY_CODE
+from app.daily_history import load_daily, merge_with_scrapes
 from app.mcp_server import build_mcp_asgi_app
 from app.scraper import scrape_all
 
@@ -301,8 +302,10 @@ async def get_rate(code: str):
 @app.get("/api/v2/history/{code}")
 async def get_history(code: str, days: Optional[int] = Query(None, ge=1, le=3650)):
     """Every recorded data point for one currency, oldest first: the
-    informal CUP rate and the full bank table as of each scrape. `days`
-    limits it to the last N days (default: everything)."""
+    informal CUP rate and the full bank table as of each scrape
+    (source="scrape"), plus one informal-only point per day that has no
+    scrape of its own (source="daily"). `days` limits it to the last N
+    days (default: everything)."""
     requested_at = datetime.now(timezone.utc).isoformat()
     code = code.upper()
     if code not in CURRENCIES_BY_CODE:
@@ -327,8 +330,11 @@ async def get_history(code: str, days: Optional[int] = Query(None, ge=1, le=3650
         except Exception:
             logger.exception("Database history load failed, trying JSON fallback")
     by_time = {datetime.fromisoformat(point["recorded_at"]): point for point in points}
-    points = [by_time[time] for time in sorted(by_time)[-10000:]]
-    
+    points = [by_time[time] for time in sorted(by_time)]
+    # Days with no scrape of our own (before this API started, or while it
+    # was down) are filled with elTOQUE's daily median for that day.
+    points = merge_with_scrapes(points, load_daily(HISTORY_DIR, code), since=since)[-10000:]
+
     return {
         "success": True,
         "requested_at": requested_at,

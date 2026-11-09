@@ -69,6 +69,14 @@ curl http://localhost:8000/api/v2/rates
 
 El histórico empieza con el último dato real del caché y crece con cada scrape. No se incluyen datos históricos simulados. Los archivos de `data/history/` son datos de ejecución y se conservan en el volumen `./data` de Docker Compose.
 
+Los días sin scrape propio (antes de que la API empezara a correr, o si estuvo caída) se pueden completar con valores diarios reales, por ejemplo la mediana diaria de elTOQUE. Se guardan en `data/history/<CODE>.daily.json` y la API los devuelve con `"source": "daily"` (los puntos del scraper llevan `"source": "scrape"` y siempre tienen prioridad ese día). Para importar un archivo `[{"date": "2026-08-10", "price": 665.84}, ...]`:
+
+```bash
+python -m app.daily_history import USD ruta/al/archivo.json
+```
+
+La gráfica de la landing se puede arrastrar para moverse, hacer zoom con la rueda, pellizco o los botones −/+, y doble clic restablece la vista.
+
 ## Pruebas
 
 ```bash

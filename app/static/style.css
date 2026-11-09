@@ -801,6 +801,28 @@ span[data-i18n].lang-active {
   inset: 0;
 }
 
+#chart-canvas {
+  display: block;
+  cursor: grab;
+  /* Vertical swipes still scroll the page; horizontal drags and pinches pan/zoom the chart. */
+  touch-action: pan-y;
+  user-select: none;
+}
+
+#chart-canvas.grabbing {
+  cursor: grabbing;
+}
+
+#hist-zoom[hidden] {
+  display: none;
+}
+
+.chart-hint {
+  margin: 0.55rem 0 0;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
 .chart-empty {
   position: absolute;
   inset: 0;

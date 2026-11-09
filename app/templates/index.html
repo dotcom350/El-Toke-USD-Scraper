@@ -203,8 +203,8 @@ curl {{ request.base_url }}api/v2/rates/EUR</code></pre>
   <section id="historico">
     <h2 data-i18n="en">History</h2>
     <h2 data-i18n="es" class="lang-active">Histórico</h2>
-    <p class="section-sub" data-i18n="en">Every scrape is saved, so the chart grows over time. Data via <code>GET /api/v2/history/{code}</code>.</p>
-    <p class="section-sub lang-active" data-i18n="es">Cada scrape se guarda, así que la gráfica crece con el tiempo. Datos vía <code>GET /api/v2/history/{code}</code>.</p>
+    <p class="section-sub" data-i18n="en">Every scrape is saved, so the chart grows over time. Days without a scrape of our own are filled with elTOQUE's daily median (hollow dots). Data via <code>GET /api/v2/history/{code}</code>.</p>
+    <p class="section-sub lang-active" data-i18n="es">Cada scrape se guarda, así que la gráfica crece con el tiempo. Los días sin scrape propio se completan con la mediana diaria de elTOQUE (puntos huecos). Datos vía <code>GET /api/v2/history/{code}</code>.</p>
 
     <div class="card chart-card">
       <div class="chart-toolbar">
@@ -224,6 +224,11 @@ curl {{ request.base_url }}api/v2/rates/EUR</code></pre>
           <button data-value="365"><span data-i18n="en">1Y</span><span data-i18n="es" class="lang-active">1A</span></button>
           <button data-value="all" class="active"><span data-i18n="en">All</span><span data-i18n="es" class="lang-active">Todo</span></button>
         </div>
+        <div class="seg" id="hist-zoom" hidden>
+          <button data-zoom="out" aria-label="Zoom out">&minus;</button>
+          <button data-zoom="in" aria-label="Zoom in">+</button>
+          <button data-zoom="reset" aria-label="Reset view">&#x21BA;</button>
+        </div>
       </div>
 
       <div class="chart-head">
@@ -239,6 +244,8 @@ curl {{ request.base_url }}api/v2/rates/EUR</code></pre>
         <div id="hist-chart"></div>
         <div class="chart-empty" id="hist-empty" hidden></div>
       </div>
+      <p class="chart-hint" data-i18n="en">Drag to move · wheel, pinch or &minus;/+ to zoom · double-click to reset</p>
+      <p class="chart-hint lang-active" data-i18n="es">Arrastra para moverte · rueda, pellizco o &minus;/+ para zoom · doble clic para restablecer</p>
     </div>
   </section>
 
@@ -342,7 +349,7 @@ docker compose up -d --build</code></pre>
     renderRatesTable();
     if (typeof hist !== "undefined") {
       populateHistCurrencies();
-      drawCustomChart();
+      drawCustomChart(true);
     }
   }
 
@@ -460,19 +467,31 @@ docker compose up -d --build</code></pre>
       unavailable: "History isn't available right now.",
       informal: "Informal", bank: "Bank · sell", high: "High", low: "Low", points: (n) => (n === 1 ? "point" : "points"),
       noData: "No data for this market.",
+      daily: "elTOQUE daily", scrape: "Scrape",
+      zoomIn: "Zoom in", zoomOut: "Zoom out", reset: "Reset view",
     },
     es: {
       collecting: (n, h) => n === 0 ? "Aún no hay histórico" : `Recopilando histórico — ${n} punto${n === 1 ? "" : "s"} por ahora. Se agrega uno cada ${h} h, así que la gráfica se irá llenando en los próximos días.`,
       unavailable: "El histórico no está disponible ahora mismo.",
       informal: "Informal", bank: "Banco · venta", high: "Máx", low: "Mín", points: (n) => (n === 1 ? "punto" : "puntos"),
       noData: "No hay datos para este mercado.",
+      daily: "Diario elTOQUE", scrape: "Scrape",
+      zoomIn: "Acercar", zoomOut: "Alejar", reset: "Restablecer vista",
     },
   };
-  // ========== CUSTOM CHART IMPLEMENTATION ==========
+
+  const HOUR = 3600000;
+  const DAY = 24 * HOUR;
+  const MIN_SPAN = 6 * HOUR;
+  const PAD = { top: 16, right: 66, bottom: 28, left: 10 };
+
   const hist = {
     code: "USD", market: "informal", bank: null, type: "line", range: "all",
     points: [], intervalMinutes: 480, error: false, loaded: false,
-    canvas: null, ctx: null, data: [], hoveredIndex: null, seq: 0,
+    canvas: null, ctx: null, data: [], seq: 0,
+    view: null,        // { start, end } in ms: the visible time window
+    hover: null,       // pointer position in CSS px, for the crosshair
+    pointers: new Map(), gesture: null, frame: 0,
   };
 
   function cssVar(name) {
@@ -481,12 +500,12 @@ docker compose up -d --build</code></pre>
 
   function getChartColors() {
     return {
-      bg: cssVar("--card"), 
-      text: cssVar("--text"), 
-      textDim: cssVar("--text-dim"), 
+      bg: cssVar("--card"),
+      text: cssVar("--text"),
+      textDim: cssVar("--text-dim"),
       grid: cssVar("--border"),
       line: cssVar("--accent"),
-      up: "#16c784", 
+      up: "#16c784",
       down: "#ea3943",
     };
   }
@@ -502,11 +521,7 @@ docker compose up -d --build</code></pre>
     const value = Number(v);
     const decimals = Math.abs(value) < 10 ? 4 : (value === Math.floor(value) ? 0 : 2);
     const locale = currentLang === "es" ? "es-ES" : "en-US";
-    const options = { 
-      minimumFractionDigits: decimals === 0 ? 0 : 2, 
-      maximumFractionDigits: decimals 
-    };
-    return value.toLocaleString(locale, options);
+    return value.toLocaleString(locale, { minimumFractionDigits: decimals === 0 ? 0 : 2, maximumFractionDigits: decimals });
   }
 
   function fmtChange(v) {
@@ -516,27 +531,65 @@ docker compose up -d --build</code></pre>
     const absValue = Math.abs(value);
     const decimals = absValue < 1 ? 4 : (absValue < 10 ? 2 : 0);
     const locale = currentLang === "es" ? "es-ES" : "en-US";
-    const options = { 
-      minimumFractionDigits: decimals === 0 ? 0 : 2, 
-      maximumFractionDigits: decimals 
-    };
-    return sign + absValue.toLocaleString(locale, options);
+    return sign + absValue.toLocaleString(locale, { minimumFractionDigits: decimals === 0 ? 0 : 2, maximumFractionDigits: decimals });
   }
 
-  // Convert API points to simple {x, y} format for chart
-  function getChartData() {
-    const cutoff = hist.range === "all" ? -Infinity : Date.now() - Number(hist.range) * 86400000;
+  function locale() {
+    return currentLang === "es" ? "es-ES" : "en-US";
+  }
+
+  // Every point of the selected market, oldest first. The range buttons
+  // and pan/zoom only move the visible window over this series.
+  function getSeries() {
     const data = [];
     hist.points.forEach((p) => {
       const ms = Date.parse(p.recorded_at);
-      if (!Number.isFinite(ms) || ms < cutoff) return;
+      if (!Number.isFinite(ms)) return;
       const value = hist.market === "informal"
         ? p.informal_cup
         : p.formal && p.formal[hist.bank] ? p.formal[hist.bank].venta : null;
       if (value === null || value === undefined || !Number.isFinite(value)) return;
-      data.push({ x: new Date(ms), y: value });
+      data.push({ x: ms, y: value, daily: p.source === "daily" });
     });
     return data.sort((a, b) => a.x - b.x);
+  }
+
+  // How far the window may be dragged: the whole series (plus a small
+  // margin) and the selected range's own window.
+  function bounds() {
+    const data = hist.data;
+    const first = data[0].x;
+    const last = data[data.length - 1].x;
+    const margin = Math.max((last - first) * 0.04, 12 * HOUR);
+    const w = rangeWindow();
+    return { start: Math.min(first - margin, w.start), end: Math.max(last + margin, w.end) };
+  }
+
+  function rangeWindow() {
+    const data = hist.data;
+    if (hist.range === "all") {
+      const first = data[0].x;
+      const last = data[data.length - 1].x;
+      const margin = Math.max((last - first) * 0.03, 12 * HOUR);
+      return { start: first - margin, end: last + margin };
+    }
+    const now = Date.now();
+    const span = Number(hist.range) * DAY;
+    // A little room on the right so the newest point isn't cut by the edge.
+    return { start: now - span, end: now + span * 0.03 };
+  }
+
+  function setView(start, end) {
+    const b = bounds();
+    let span = Math.max(end - start, MIN_SPAN);
+    span = Math.min(span, b.end - b.start);
+    start = Math.min(Math.max(start, b.start), b.end - span);
+    hist.view = { start, end: start + span };
+  }
+
+  function visibleData() {
+    const { start, end } = hist.view;
+    return hist.data.filter((d) => d.x >= start && d.x <= end);
   }
 
   function renderHistHead() {
@@ -546,27 +599,25 @@ docker compose up -d --build</code></pre>
     const marketLabel = hist.market === "informal" ? t.informal : `${t.bank} (${hist.bank || "—"})`;
     document.getElementById("hist-title").innerHTML = `${flagHtml(hist.code)}<b>${hist.code}/CUP</b> <span>${name} · ${marketLabel}</span>`;
 
-    const data = getChartData();
+    const data = hist.view && hist.data.length ? visibleData() : [];
     const priceEl = document.getElementById("hist-price");
     const changeEl = document.getElementById("hist-change");
     const metaEl = document.getElementById("hist-meta");
-    
+
     if (!data.length) {
-      priceEl.textContent = "—"; 
-      changeEl.textContent = ""; 
+      priceEl.textContent = "—";
+      changeEl.textContent = "";
+      changeEl.className = "chart-change";
       metaEl.textContent = "";
       return;
     }
-    
+
     const first = data[0].y;
     const last = data[data.length - 1].y;
-    const shown = last; // For now, show last value
     const diff = last - first;
     const pct = first ? (diff / first) * 100 : 0;
-    
-    priceEl.textContent = `${fmt(shown)} CUP`;
-    
-    // Format change with better display
+    priceEl.textContent = `${fmt(last)} CUP`;
+
     if (data.length >= 2) {
       changeEl.textContent = `${fmtChange(diff)} (${fmtChange(pct)}%)`;
       changeEl.className = "chart-change " + (diff > 0 ? "up" : diff < 0 ? "down" : "");
@@ -574,27 +625,29 @@ docker compose up -d --build</code></pre>
       changeEl.textContent = "";
       changeEl.className = "chart-change";
     }
-    
+
     const values = data.map((d) => d.y);
-    const max = Math.max(...values);
-    const min = Math.min(...values);
-    
-    const rangeLabel = data.length >= 2 ? 
-      `${t.high} ${fmt(max)} · ${t.low} ${fmt(min)} · ${data.length} ${t.points(data.length)}` :
-      `${data.length} ${t.points(data.length)}`;
-    metaEl.textContent = rangeLabel;
+    metaEl.textContent = data.length >= 2
+      ? `${t.high} ${fmt(Math.max(...values))} · ${t.low} ${fmt(Math.min(...values))} · ${data.length} ${t.points(data.length)}`
+      : `${data.length} ${t.points(data.length)}`;
   }
 
-  function drawCustomChart() {
+  // keepView: redraw (e.g. after a language switch) without resetting
+  // where the user had panned/zoomed to.
+  function drawCustomChart(keepView = false) {
     const t = HIST_TEXT[currentLang] || HIST_TEXT.es;
     const container = document.getElementById("hist-chart");
     const emptyEl = document.getElementById("hist-empty");
-    // Clear container
-    container.innerHTML = '';
+    const previousView = hist.view;
+    container.innerHTML = "";
     hist.canvas = null;
     hist.ctx = null;
     hist.data = [];
-    
+    hist.view = null;
+    hist.hover = null;
+    hist.pointers.clear();
+    hist.gesture = null;
+
     // Market toggle: disable whichever side this currency doesn't have.
     const hasInformal = hist.points.some((p) => p.informal_cup !== null && p.informal_cup !== undefined);
     const banks = bankList();
@@ -610,174 +663,427 @@ docker compose up -d --build</code></pre>
     if (!banks.includes(hist.bank)) hist.bank = banks.includes("CADECA Casas de cambio") ? "CADECA Casas de cambio" : banks[0] || null;
     bankSel.innerHTML = banks.map((b) => `<option value="${b}"${b === hist.bank ? " selected" : ""}>${b}</option>`).join("");
 
-    const data = getChartData();
-    
-    if (!data.length) {
+    const zoomBox = document.getElementById("hist-zoom");
+    zoomBox.querySelector('[data-zoom="in"]').title = t.zoomIn;
+    zoomBox.querySelector('[data-zoom="out"]').title = t.zoomOut;
+    zoomBox.querySelector('[data-zoom="reset"]').title = t.reset;
+
+    hist.data = getSeries();
+    if (hist.data.length) {
+      if (keepView && previousView) setView(previousView.start, previousView.end);
+      else hist.view = rangeWindow();
+    }
+
+    if (!hist.data.length || !visibleData().length) {
       emptyEl.hidden = false;
       emptyEl.textContent = !hist.loaded ? "…" : (hist.error ? t.unavailable : (hist.points.length ? t.noData : t.collecting(0, Math.round(hist.intervalMinutes / 60))));
+      zoomBox.hidden = true;
       renderHistHead();
       return;
     }
-    
+
     emptyEl.hidden = true;
-    
-    // Create canvas
-    const canvas = document.createElement('canvas');
-    canvas.id = 'chart-canvas';
-    canvas.style.width = '100%';
-    canvas.style.height = '100%';
+    zoomBox.hidden = false;
+
+    const canvas = document.createElement("canvas");
+    canvas.id = "chart-canvas";
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
     container.appendChild(canvas);
-    
     hist.canvas = canvas;
-    hist.ctx = canvas.getContext('2d');
-    hist.data = data;
-    
+    hist.ctx = canvas.getContext("2d");
+    attachChartInput(canvas);
+
     requestAnimationFrame(resizeAndDrawChart);
-    
     renderHistHead();
   }
 
-  function resizeAndDrawChart() {
-    if (!hist.canvas || !hist.ctx || !hist.data.length) return;
-    
-    const canvas = hist.canvas;
-    const ctx = hist.ctx;
-    const data = hist.data;
-    const colors = getChartColors();
-    
-    // Get container dimensions
-    const container = document.getElementById('hist-chart');
-    const width = container.clientWidth;
-    const height = container.clientHeight;
-    
-    if (width <= 0 || height <= 0) return;
-    
-    // Set canvas size
-    canvas.width = width * (window.devicePixelRatio || 1);
-    canvas.height = height * (window.devicePixelRatio || 1);
-    canvas.style.width = width + 'px';
-    canvas.style.height = height + 'px';
-    
-    // Scale context
-    ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
-    
-    // Clear canvas
-    ctx.fillStyle = colors.bg;
-    ctx.fillRect(0, 0, width, height);
-    
-    // Calculate padding and dimensions
-    const padding = { top: 20, right: 60, bottom: 50, left: 60 };
-    const chartWidth = width - padding.left - padding.right;
-    const chartHeight = height - padding.top - padding.bottom;
-    
-    if (chartWidth <= 0 || chartHeight <= 0) return;
-    
-    // Get min/max values
-    const yValues = data.map(d => d.y);
-    const minY = Math.min(...yValues);
-    const maxY = Math.max(...yValues);
-    const yRange = maxY - minY;
-    // Flat rates and the first recorded point still need a non-zero scale.
-    const yPadding = yRange > 0 ? yRange * 0.1 : Math.max(Math.abs(maxY) * 0.01, 0.01);
-    const chartMinY = minY - yPadding;
-    const chartMaxY = maxY + yPadding;
-    const firstTime = data[0].x.getTime();
-    const timeRange = data[data.length - 1].x.getTime() - firstTime;
-    const xPosition = (d) => padding.left + (timeRange ? (d.x.getTime() - firstTime) / timeRange : 0.5) * chartWidth;
-    
-    // Draw grid lines (horizontal)
-    ctx.strokeStyle = colors.grid;
-    ctx.lineWidth = 1;
-    
-    const gridLines = 5;
-    for (let i = 0; i <= gridLines; i++) {
-      const y = padding.top + (chartHeight * i / gridLines);
-      const value = chartMaxY - ((chartMaxY - chartMinY) * i / gridLines);
-      
-      ctx.beginPath();
-      ctx.moveTo(padding.left, y);
-      ctx.lineTo(width - padding.right, y);
-      ctx.stroke();
-      
-      // Draw label
-      ctx.fillStyle = colors.textDim;
-      ctx.font = '11px ' + cssVar('--sans');
-      ctx.textAlign = 'right';
-      ctx.fillText(fmt(value), width - padding.right - 5, y + 3);
-    }
-    
-    // Draw Y axis label
-    ctx.fillStyle = colors.textDim;
-    ctx.font = '10px ' + cssVar('--sans');
-    ctx.save();
-    ctx.translate(15, height / 2);
-    ctx.rotate(-Math.PI / 2);
-    ctx.textAlign = 'center';
-    ctx.fillText('CUP', 0, 0);
-    ctx.restore();
-    
-    // Draw line chart
-    if (data.length >= 2) {
-      ctx.beginPath();
-      
-      data.forEach((d, i) => {
-        const x = xPosition(d);
-        const y = padding.top + ((chartMaxY - d.y) / (chartMaxY - chartMinY)) * chartHeight;
-        
-        if (i === 0) {
-          ctx.moveTo(x, y);
-        } else {
-          ctx.lineTo(x, y);
-        }
-      });
-      
-      ctx.strokeStyle = colors.line;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      
-      // Draw points
-      data.forEach((d, i) => {
-        const x = xPosition(d);
-        const y = padding.top + ((chartMaxY - d.y) / (chartMaxY - chartMinY)) * chartHeight;
-        
-        ctx.beginPath();
-        ctx.arc(x, y, 4, 0, Math.PI * 2);
-        ctx.fillStyle = colors.line;
-        ctx.fill();
-      });
-    } else if (data.length === 1) {
-      // Single point
-      const x = padding.left + chartWidth / 2;
-      const y = padding.top + ((chartMaxY - data[0].y) / (chartMaxY - chartMinY)) * chartHeight;
-      
-      ctx.beginPath();
-      ctx.arc(x, y, 6, 0, Math.PI * 2);
-      ctx.fillStyle = colors.line;
-      ctx.fill();
-    }
-    
-    // Draw X axis labels
-    ctx.fillStyle = colors.textDim;
-    ctx.font = '10px ' + cssVar('--sans');
-    ctx.textAlign = 'center';
-    
-    const labelCount = Math.min(data.length, 8);
-    const labelStep = Math.ceil(data.length / labelCount);
-    
-    data.forEach((d, i) => {
-      if (i % labelStep !== 0 && i !== data.length - 1) return;
-      
-      const x = xPosition(d);
-      const date = new Date(d.x);
-      const label = date.toLocaleDateString(currentLang === "es" ? "es-ES" : "en-US", { month: "short", day: "numeric" });
-      
-      ctx.save();
-      ctx.translate(x, height - padding.bottom + 20);
-      ctx.rotate(Math.PI / 4);
-      ctx.fillText(label, 0, 0);
-      ctx.restore();
+  function scheduleDraw() {
+    if (hist.frame) return;
+    hist.frame = requestAnimationFrame(() => {
+      hist.frame = 0;
+      resizeAndDrawChart();
+      renderHistHead();
     });
   }
+
+  function niceStep(span, count) {
+    const raw = span / Math.max(count, 1);
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const norm = raw / mag;
+    return (norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10) * mag;
+  }
+
+  const TIME_STEPS = [HOUR, 2 * HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR, DAY, 2 * DAY, 3 * DAY, 7 * DAY, 14 * DAY, 30 * DAY, 61 * DAY, 91 * DAY, 182 * DAY, 365 * DAY];
+
+  function timeTicks(start, end, maxTicks) {
+    const span = end - start;
+    const step = TIME_STEPS.find((s) => span / s <= maxTicks) || TIME_STEPS[TIME_STEPS.length - 1];
+    const ticks = [];
+    if (step >= 30 * DAY) {
+      // Month steps: on the 1st of every Nth month, local time.
+      const months = Math.round(step / (30.4 * DAY));
+      const d = new Date(start);
+      d.setHours(0, 0, 0, 0);
+      d.setDate(1);
+      d.setMonth(Math.ceil(d.getMonth() / months) * months);
+      while (d.getTime() < start) d.setMonth(d.getMonth() + months);
+      for (; d.getTime() <= end; d.setMonth(d.getMonth() + months)) ticks.push(d.getTime());
+      return { ticks, step };
+    }
+    // Align to local midnight / local hours, not to UTC.
+    const offset = -new Date(start).getTimezoneOffset() * 60000;
+    const align = step >= DAY ? DAY : step;
+    for (let t = Math.ceil((start + offset) / align) * align - offset; t <= end; t += step) ticks.push(t);
+    return { ticks, step };
+  }
+
+  function chartGeometry() {
+    const container = document.getElementById("hist-chart");
+    const width = container.clientWidth;
+    const height = container.clientHeight;
+    return { width, height, plotW: width - PAD.left - PAD.right, plotH: height - PAD.top - PAD.bottom };
+  }
+
+  function resizeAndDrawChart() {
+    if (!hist.canvas || !hist.ctx || !hist.data.length || !hist.view) return;
+
+    const canvas = hist.canvas;
+    const ctx = hist.ctx;
+    const colors = getChartColors();
+    const { width, height, plotW, plotH } = chartGeometry();
+    if (width <= 0 || height <= 0 || plotW <= 0 || plotH <= 0) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+    }
+    canvas.style.width = width + "px";
+    canvas.style.height = height + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    ctx.fillStyle = colors.bg;
+    ctx.fillRect(0, 0, width, height);
+
+    const { start, end } = hist.view;
+    const all = hist.data;
+    // The visible points plus one neighbour on each side, so the line runs
+    // to the plot edges instead of stopping at the last visible point.
+    let lo = all.findIndex((d) => d.x >= start);
+    if (lo === -1) lo = all.length;
+    let hi = lo;
+    while (hi < all.length && all[hi].x <= end) hi++;
+    const shown = all.slice(Math.max(lo - 1, 0), Math.min(hi + 1, all.length));
+    const inView = all.slice(lo, hi);
+    const scaleSource = inView.length ? inView : shown;
+
+    const ys = scaleSource.map((d) => d.y);
+    let minY = Math.min(...ys);
+    let maxY = Math.max(...ys);
+    const yPad = maxY > minY ? (maxY - minY) * 0.12 : Math.max(Math.abs(maxY) * 0.01, 0.01);
+    minY -= yPad;
+    maxY += yPad;
+
+    const xOf = (ms) => PAD.left + ((ms - start) / (end - start)) * plotW;
+    const yOf = (v) => PAD.top + ((maxY - v) / (maxY - minY)) * plotH;
+    const font = cssVar("--sans") || "sans-serif";
+
+    // Horizontal grid + right-hand price scale.
+    const yStep = niceStep(maxY - minY, Math.max(Math.floor(plotH / 55), 2));
+    ctx.lineWidth = 1;
+    ctx.font = "11px " + font;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    for (let v = Math.ceil(minY / yStep) * yStep; v <= maxY; v += yStep) {
+      const y = Math.round(yOf(v)) + 0.5;
+      ctx.strokeStyle = colors.grid;
+      ctx.beginPath();
+      ctx.moveTo(PAD.left, y);
+      ctx.lineTo(PAD.left + plotW, y);
+      ctx.stroke();
+      ctx.fillStyle = colors.textDim;
+      ctx.fillText(fmt(v), PAD.left + plotW + 8, y);
+    }
+
+    // Time axis.
+    const { ticks, step } = timeTicks(start, end, Math.max(Math.floor(plotW / 95), 2));
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    const multiYear = new Date(start).getFullYear() !== new Date(end).getFullYear();
+    ticks.forEach((tick) => {
+      const x = Math.round(xOf(tick)) + 0.5;
+      if (x < PAD.left || x > PAD.left + plotW) return;
+      ctx.strokeStyle = colors.grid;
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(x, PAD.top);
+      ctx.lineTo(x, PAD.top + plotH);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      const d = new Date(tick);
+      const label = step < DAY
+        ? d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })
+        : step >= 30 * DAY
+          ? d.toLocaleDateString(locale(), multiYear || step >= 182 * DAY ? { month: "short", year: "numeric" } : { month: "short" })
+          : d.toLocaleDateString(locale(), { month: "short", day: "numeric" });
+      // Skip a label that would be cut off by the canvas edge.
+      const half = ctx.measureText(label).width / 2;
+      if (x - half < 0 || x + half > PAD.left + plotW + PAD.right) return;
+      ctx.fillStyle = colors.textDim;
+      ctx.fillText(label, x, PAD.top + plotH + 8);
+    });
+
+    // Series: area + line, clipped to the plot.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(PAD.left, PAD.top, plotW, plotH);
+    ctx.clip();
+
+    if (shown.length >= 2) {
+      const grad = ctx.createLinearGradient(0, PAD.top, 0, PAD.top + plotH);
+      grad.addColorStop(0, colors.line);
+      grad.addColorStop(1, colors.bg);
+      ctx.globalAlpha = 0.18;
+      ctx.beginPath();
+      shown.forEach((d, i) => (i ? ctx.lineTo(xOf(d.x), yOf(d.y)) : ctx.moveTo(xOf(d.x), yOf(d.y))));
+      ctx.lineTo(xOf(shown[shown.length - 1].x), PAD.top + plotH);
+      ctx.lineTo(xOf(shown[0].x), PAD.top + plotH);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      ctx.beginPath();
+      shown.forEach((d, i) => (i ? ctx.lineTo(xOf(d.x), yOf(d.y)) : ctx.moveTo(xOf(d.x), yOf(d.y))));
+      ctx.strokeStyle = colors.line;
+      ctx.lineWidth = 2;
+      ctx.lineJoin = "round";
+      ctx.stroke();
+    }
+
+    // Dots only when they don't turn into a smudge. Daily backfill points
+    // are hollow, real scrapes are filled.
+    const pxPerPoint = plotW / Math.max(inView.length, 1);
+    if (inView.length === 1 || pxPerPoint >= 7) {
+      const r = inView.length === 1 ? 5 : 3;
+      inView.forEach((d) => {
+        ctx.beginPath();
+        ctx.arc(xOf(d.x), yOf(d.y), r, 0, Math.PI * 2);
+        if (d.daily) {
+          ctx.fillStyle = colors.bg;
+          ctx.fill();
+          ctx.strokeStyle = colors.line;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = colors.line;
+          ctx.fill();
+        }
+      });
+    }
+    ctx.restore();
+
+    // Last visible price: dashed guide + tag on the price scale.
+    if (inView.length) {
+      const last = inView[inView.length - 1];
+      const y = yOf(last.y);
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = colors.line;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(PAD.left, y);
+      ctx.lineTo(PAD.left + plotW, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      drawTag(ctx, fmt(last.y), PAD.left + plotW + 2, y, colors.line, colors.bg, font);
+    }
+
+    drawCrosshair(ctx, inView, xOf, yOf, plotW, plotH, colors, font);
+  }
+
+  function drawTag(ctx, text, x, y, bg, fg, font) {
+    ctx.font = "600 11px " + font;
+    const w = ctx.measureText(text).width + 10;
+    ctx.fillStyle = bg;
+    ctx.fillRect(x, y - 9, w, 18);
+    ctx.fillStyle = fg;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x + 5, y);
+  }
+
+  function drawCrosshair(ctx, inView, xOf, yOf, plotW, plotH, colors, font) {
+    const h = hist.hover;
+    if (!h || hist.gesture || !inView.length) return;
+    if (h.x < PAD.left || h.x > PAD.left + plotW || h.y < PAD.top || h.y > PAD.top + plotH) return;
+
+    let nearest = inView[0];
+    inView.forEach((d) => { if (Math.abs(xOf(d.x) - h.x) < Math.abs(xOf(nearest.x) - h.x)) nearest = d; });
+    const x = xOf(nearest.x);
+    const y = yOf(nearest.y);
+
+    ctx.strokeStyle = colors.textDim;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(x, PAD.top);
+    ctx.lineTo(x, PAD.top + plotH);
+    ctx.moveTo(PAD.left, y);
+    ctx.lineTo(PAD.left + plotW, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = colors.line;
+    ctx.fill();
+    ctx.strokeStyle = colors.bg;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    const t = HIST_TEXT[currentLang] || HIST_TEXT.es;
+    const d = new Date(nearest.x);
+    const when = nearest.daily
+      ? d.toLocaleDateString(locale(), { day: "numeric", month: "short", year: "numeric" })
+      : d.toLocaleString(locale(), { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    const lines = [`${fmt(nearest.y)} CUP`, when, nearest.daily ? t.daily : t.scrape];
+
+    ctx.font = "600 12px " + font;
+    const boxW = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 18;
+    const boxH = 56;
+    let bx = x + 12;
+    if (bx + boxW > PAD.left + plotW) bx = x - 12 - boxW;
+    bx = Math.max(bx, PAD.left);
+    const by = Math.min(Math.max(y - boxH - 10, PAD.top), PAD.top + plotH - boxH);
+    ctx.fillStyle = colors.bg;
+    ctx.strokeStyle = colors.grid;
+    ctx.lineWidth = 1;
+    ctx.fillRect(bx, by, boxW, boxH);
+    ctx.strokeRect(bx + 0.5, by + 0.5, boxW - 1, boxH - 1);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    lines.forEach((line, i) => {
+      ctx.font = (i === 0 ? "700 12px " : "11px ") + font;
+      ctx.fillStyle = i === 0 ? colors.text : colors.textDim;
+      ctx.fillText(line, bx + 9, by + 7 + i * 16);
+    });
+
+    drawTag(ctx, fmt(nearest.y), PAD.left + plotW + 2, y, colors.textDim, colors.bg, font);
+  }
+
+  // ---- Pan / zoom input ----
+  // Drag (mouse or one finger) pans, wheel / pinch / buttons zoom,
+  // double-click resets to the selected range.
+  function zoomAt(factor, anchorMs) {
+    if (!hist.view) return;
+    const { start, end } = hist.view;
+    const anchor = anchorMs === undefined ? (start + end) / 2 : anchorMs;
+    const ratio = (anchor - start) / (end - start);
+    const b = bounds();
+    const span = Math.min(Math.max((end - start) * factor, MIN_SPAN), b.end - b.start);
+    setView(anchor - ratio * span, anchor - ratio * span + span);
+    scheduleDraw();
+  }
+
+  function msAtX(x) {
+    const { plotW } = chartGeometry();
+    const { start, end } = hist.view;
+    return start + ((x - PAD.left) / plotW) * (end - start);
+  }
+
+  function localPoint(canvas, e) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function pinchState() {
+    const [a, b] = [...hist.pointers.values()];
+    return { dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, mid: (a.x + b.x) / 2 };
+  }
+
+  function attachChartInput(canvas) {
+    canvas.addEventListener("pointerdown", (e) => {
+      if (!hist.view) return;
+      const p = localPoint(canvas, e);
+      if (e.pointerType !== "mouse") hist.hover = p; // a tap shows the tooltip
+      hist.pointers.set(e.pointerId, p);
+      canvas.setPointerCapture(e.pointerId);
+      canvas.classList.add("grabbing");
+      if (hist.pointers.size === 1) {
+        hist.gesture = { type: "pan", x0: p.x, view: { ...hist.view } };
+      } else if (hist.pointers.size === 2) {
+        const s = pinchState();
+        hist.gesture = { type: "pinch", dist0: s.dist, anchor: msAtX(s.mid), view: { ...hist.view } };
+      }
+    });
+
+    canvas.addEventListener("pointermove", (e) => {
+      if (!hist.view) return;
+      const p = localPoint(canvas, e);
+      if (e.pointerType === "mouse") hist.hover = p;
+      if (hist.pointers.has(e.pointerId)) hist.pointers.set(e.pointerId, p);
+      const g = hist.gesture;
+      if (g && g.type === "pan" && hist.pointers.size === 1) {
+        const { plotW } = chartGeometry();
+        const shift = ((p.x - g.x0) / plotW) * (g.view.end - g.view.start);
+        setView(g.view.start - shift, g.view.end - shift);
+        if (e.pointerType !== "mouse" && Math.abs(p.x - g.x0) > 6) hist.hover = null;
+      } else if (g && g.type === "pinch" && hist.pointers.size === 2) {
+        const s = pinchState();
+        const span = (g.view.end - g.view.start) * (g.dist0 / s.dist);
+        const ratio = (g.anchor - g.view.start) / (g.view.end - g.view.start);
+        setView(g.anchor - ratio * span, g.anchor - ratio * span + span);
+      }
+      scheduleDraw();
+    });
+
+    const release = (e) => {
+      hist.pointers.delete(e.pointerId);
+      if (hist.pointers.size === 1) {
+        const [p] = [...hist.pointers.values()];
+        hist.gesture = { type: "pan", x0: p.x, view: { ...hist.view } };
+      } else if (!hist.pointers.size) {
+        hist.gesture = null;
+        canvas.classList.remove("grabbing");
+      }
+      scheduleDraw();
+    };
+    canvas.addEventListener("pointerup", release);
+    canvas.addEventListener("pointercancel", release);
+    canvas.addEventListener("pointerleave", (e) => {
+      if (e.pointerType === "mouse") { hist.hover = null; scheduleDraw(); }
+    });
+
+    canvas.addEventListener("wheel", (e) => {
+      if (!hist.view) return;
+      e.preventDefault();
+      const p = localPoint(canvas, e);
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        // Horizontal trackpad swipe pans.
+        const { plotW } = chartGeometry();
+        const shift = (e.deltaX / plotW) * (hist.view.end - hist.view.start);
+        setView(hist.view.start + shift, hist.view.end + shift);
+        scheduleDraw();
+      } else {
+        zoomAt(Math.exp(Math.max(Math.min(e.deltaY, 200), -200) * 0.002), msAtX(p.x));
+      }
+    }, { passive: false });
+
+    canvas.addEventListener("dblclick", () => {
+      hist.view = rangeWindow();
+      scheduleDraw();
+    });
+  }
+
+  document.querySelectorAll("#hist-zoom button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!hist.view) return;
+      if (btn.dataset.zoom === "in") zoomAt(0.7);
+      else if (btn.dataset.zoom === "out") zoomAt(1 / 0.7);
+      else { hist.view = rangeWindow(); scheduleDraw(); }
+    });
+  });
 
   async function loadHistory() {
     const seq = ++hist.seq;
@@ -793,7 +1099,7 @@ docker compose up -d --build</code></pre>
       if (seq !== hist.seq) return;
       hist.points = [];
       hist.error = true;
-      console.error('Error loading history:', err);
+      console.error("Error loading history:", err);
     }
     hist.loaded = true;
     drawCustomChart();
@@ -829,8 +1135,7 @@ docker compose up -d --build</code></pre>
     });
   });
 
-  // Add resize listener for responsive chart
-  window.addEventListener('resize', () => {
+  window.addEventListener("resize", () => {
     resizeAndDrawChart();
   });
 

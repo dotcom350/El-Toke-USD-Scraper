@@ -67,6 +67,14 @@ curl http://localhost:8000/api/v2/rates
 | `GET` | `/docs` | Interactive Swagger / OpenAPI docs |
 | `GET` | `/` | Bilingual landing page |
 
+Days with no scrape of our own (before the API started running, or while it was down) can be filled with real daily values, e.g. elTOQUE's daily median. They live in `data/history/<CODE>.daily.json` and the API returns them with `"source": "daily"` (scraper points carry `"source": "scrape"` and always win for their day). To import a `[{"date": "2026-08-10", "price": 665.84}, ...]` file:
+
+```bash
+python -m app.daily_history import USD path/to/file.json
+```
+
+The landing chart can be dragged to pan, zoomed with the wheel, a pinch or the −/+ buttons, and double-click resets the view.
+
 ## Connect via MCP
 
 The API exposes an [MCP](https://modelcontextprotocol.io) server at `/mcp/` with 3 tools: `list_currencies`, `get_all_rates` and `get_rate(code)`. Same as the REST API, the tools only read the cache - they never trigger a live scrape. No API key.
