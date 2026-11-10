@@ -73,7 +73,10 @@ Los días sin scrape propio (antes de que la API empezara a correr, o si estuvo 
 
 ```bash
 python -m app.daily_history import USD ruta/al/archivo.json
+python -m app.daily_history import-csv ruta/al/archivo.csv   # columnas: fecha,USD,EUR,MLC
 ```
+
+La app trae en `app/seed/eltoque_tasas_3meses.csv` los últimos 3 meses de elTOQUE (USD, EUR y MLC, del 11 de agosto al 9 de noviembre de 2026). Cada CSV de `app/seed/` se carga al arrancar, rellenando solo los días que falten: la gráfica tiene 3 meses desde el primer despliegue y reiniciar no pisa datos más nuevos. A partir de ahí el scraper sigue agregando puntos reales.
 
 La gráfica de la landing se puede arrastrar para moverse, hacer zoom con la rueda, pellizco o los botones −/+, y doble clic restablece la vista.
 

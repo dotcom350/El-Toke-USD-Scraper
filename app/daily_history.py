@@ -8,10 +8,19 @@ is only served for a UTC day that has no scraped informal rate.
 
 Import a file of daily values by hand with:
     python -m app.daily_history import USD path/to/file.json
-The file may be [{"date": "2026-08-10", "price": 665.84}, ...] or elTOQUE's
-own chart shape [{"_id": "2026-08-10", "median": 665.84}, ...].
+    python -m app.daily_history import-csv path/to/file.csv
+The JSON may be [{"date": "2026-08-10", "price": 665.84}, ...] or elTOQUE's
+own chart shape [{"_id": "2026-08-10", "median": 665.84}, ...]. The CSV has
+a "fecha" (or "date") column plus one column per currency code:
+    fecha,USD,EUR,MLC
+    2026-08-11,670,780,460.28
+
+Every CSV in app/seed/ is loaded on startup with seed_from_dir(), filling
+only days not stored yet, so the chart has elTOQUE's last months from the
+first deploy and restarts never overwrite newer values.
 """
 
+import csv
 import json
 import logging
 import sys
@@ -71,15 +80,18 @@ def load_daily(history_dir: str, code: str) -> dict[str, float]:
         return {}
 
 
-def save_daily(history_dir: str, code: str, values: dict[str, float]) -> int:
-    """Merges `values` into the stored file. A day already stored is
-    overwritten, since the current day's median keeps moving until the day
-    closes. Returns how many days were added or changed."""
+def save_daily(history_dir: str, code: str, values: dict[str, float], overwrite: bool = True) -> int:
+    """Merges `values` into the stored file. By default a day already
+    stored is overwritten, since the current day's median keeps moving
+    until the day closes; overwrite=False only adds missing days. Returns
+    how many days were added or changed."""
     if not values:
         return 0
     path = _path(history_dir, code)
     path.parent.mkdir(parents=True, exist_ok=True)
     stored = load_daily(history_dir, code)
+    if not overwrite:
+        values = {day: rate for day, rate in values.items() if day not in stored}
     changed = sum(1 for day, rate in values.items() if stored.get(day) != rate)
     if not changed:
         return 0
@@ -89,6 +101,37 @@ def save_daily(history_dir: str, code: str, values: dict[str, float]) -> int:
         json.dump(dict(sorted(stored.items())), f, ensure_ascii=False, indent=2)
     pending.replace(path)
     return changed
+
+
+def read_csv(path) -> dict[str, dict[str, float]]:
+    """{code: {day: rate}} from a "fecha,USD,EUR,..." CSV. Empty or
+    non-numeric cells are skipped."""
+    with open(path, "r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        date_col = next((c for c in reader.fieldnames or [] if c.strip().lower() in ("fecha", "date")), None)
+        if not date_col:
+            raise ValueError(f"{path}: no 'fecha' or 'date' column")
+        codes = [c for c in reader.fieldnames if c != date_col]
+        rows = list(reader)
+    return {
+        code.strip().upper(): normalize({"date": row[date_col], "price": row[code]} for row in rows)
+        for code in codes
+    }
+
+
+def seed_from_dir(history_dir: str, seed_dir: str) -> dict[str, int]:
+    """Loads every CSV in seed_dir, adding only days not stored yet.
+    Returns {code: days added}."""
+    added: dict[str, int] = {}
+    for path in sorted(Path(seed_dir).glob("*.csv")):
+        try:
+            for code, values in read_csv(path).items():
+                count = save_daily(history_dir, code, values, overwrite=False)
+                if count:
+                    added[code] = added.get(code, 0) + count
+        except Exception as exc:  # noqa: BLE001 - a bad seed file must not stop the API
+            logger.error("Could not load seed file %s: %s", path, exc)
+    return added
 
 
 def merge_with_scrapes(scrape_points: list[dict], daily: dict[str, float], since: Optional[datetime] = None) -> list[dict]:
@@ -118,6 +161,14 @@ def merge_with_scrapes(scrape_points: list[dict], daily: dict[str, float], since
 def _main(argv: list[str]) -> int:
     import os
 
+    history_dir = os.getenv("HISTORY_DIR", "data/history")
+    if len(argv) == 2 and argv[0] == "import-csv":
+        for code, values in read_csv(argv[1]).items():
+            if values:
+                changed = save_daily(history_dir, code, values)
+                days = sorted(values)
+                print(f"{code}: {len(values)} days ({days[0]} -> {days[-1]}), {changed} added/changed")
+        return 0
     if len(argv) != 3 or argv[0] != "import":
         print(__doc__)
         return 2
@@ -129,7 +180,6 @@ def _main(argv: list[str]) -> int:
     if not values:
         print(f"No valid daily values found in {file_path}")
         return 1
-    history_dir = os.getenv("HISTORY_DIR", "data/history")
     changed = save_daily(history_dir, code, values)
     days = sorted(values)
     print(f"{code}: {len(values)} days ({days[0]} -> {days[-1]}), {changed} added/changed in {_path(history_dir, code)}")

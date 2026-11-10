@@ -20,7 +20,7 @@ from app.assets import content_hash
 from app.bot import BotManager
 from app.cache import RateCache
 from app.currencies import CURRENCIES, CURRENCIES_BY_CODE
-from app.daily_history import load_daily, merge_with_scrapes
+from app.daily_history import load_daily, merge_with_scrapes, seed_from_dir
 from app.mcp_server import build_mcp_asgi_app
 from app.scraper import scrape_all
 
@@ -31,6 +31,7 @@ FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY")
 INTERVAL_MINUTES = int(os.getenv("SCRAPE_INTERVAL_MINUTES", "480"))
 CACHE_PATH = os.getenv("CACHE_PATH", "data/cache.json")
 HISTORY_DIR = os.getenv("HISTORY_DIR", "data/history")
+SEED_DIR = os.getenv("SEED_DIR", str(Path(__file__).parent / "seed"))
 
 
 async def save_history_to_json(rows: list) -> None:
@@ -177,6 +178,11 @@ async def refresh_job() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cache.load()
+    # Daily values shipped with the app (elTOQUE's last months) so the
+    # chart isn't empty on a fresh install. Only fills missing days.
+    seeded = seed_from_dir(HISTORY_DIR, SEED_DIR)
+    if seeded:
+        logger.info("Seeded daily history: %s", seeded)
     # DB first, so the startup scrape (and the cache already on disk) can be
     # recorded into the rate history.
     await db.init_pool()

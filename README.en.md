@@ -71,7 +71,10 @@ Days with no scrape of our own (before the API started running, or while it was 
 
 ```bash
 python -m app.daily_history import USD path/to/file.json
+python -m app.daily_history import-csv path/to/file.csv   # columns: fecha,USD,EUR,MLC
 ```
+
+The app ships elTOQUE's last 3 months in `app/seed/eltoque_tasas_3meses.csv` (USD, EUR and MLC, Aug 11 to Nov 9, 2026). Every CSV in `app/seed/` is loaded on startup, filling only missing days: the chart has 3 months from the first deploy and restarts never overwrite newer values. From there the scraper keeps adding real points.
 
 The landing chart can be dragged to pan, zoomed with the wheel, a pinch or the −/+ buttons, and double-click resets the view.
 

@@ -118,6 +118,25 @@ class HistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await_points(self.temp.name), [])
 
 
+    def test_seed_csv_fills_missing_days_only_and_survives_restarts(self):
+        seed = Path(self.temp.name) / "seed"
+        seed.mkdir()
+        (seed / "rates.csv").write_text(
+            "fecha,USD,EUR,MLC\n2026-08-11,670,780,460.28\n2026-08-12,670,,460\n", encoding="utf-8"
+        )
+        history = str(Path(self.temp.name) / "history")
+        self.assertEqual(daily_history.seed_from_dir(history, str(seed)), {"USD": 2, "EUR": 1, "MLC": 2})
+        daily_history.save_daily(history, "USD", {"2026-08-12": 675.0})  # a newer value
+        self.assertEqual(daily_history.seed_from_dir(history, str(seed)), {})
+        self.assertEqual(daily_history.load_daily(history, "USD"), {"2026-08-11": 670.0, "2026-08-12": 675.0})
+        self.assertEqual(daily_history.load_daily(history, "MLC")["2026-08-11"], 460.28)
+
+    def test_shipped_seed_covers_three_months_of_usd_eur_mlc(self):
+        values = daily_history.read_csv(Path(main.SEED_DIR) / "eltoque_tasas_3meses.csv")
+        for code in ("USD", "EUR", "MLC"):
+            self.assertGreaterEqual(len(values[code]), 90, code)
+
+
 def await_points(history_dir):
     import asyncio
     with patch.object(main, "HISTORY_DIR", history_dir):
