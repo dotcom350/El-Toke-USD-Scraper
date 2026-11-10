@@ -823,8 +823,12 @@ docker compose up -d --build</code></pre>
       ctx.stroke();
       ctx.globalAlpha = 1;
       const d = new Date(tick);
-      const label = step < DAY
+      // Hour steps: the midnight tick shows the date, so the axis says which day it is.
+      const midnight = d.getHours() === 0 && d.getMinutes() === 0;
+      const label = step < DAY && !midnight
         ? d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" })
+        : step < DAY
+          ? d.toLocaleDateString(locale(), { month: "short", day: "numeric" })
         : step >= 30 * DAY
           ? d.toLocaleDateString(locale(), multiYear || step >= 182 * DAY ? { month: "short", year: "numeric" } : { month: "short" })
           : d.toLocaleDateString(locale(), { month: "short", day: "numeric" });
